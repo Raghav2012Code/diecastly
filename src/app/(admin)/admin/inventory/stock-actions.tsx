@@ -1,4 +1,5 @@
 import { AdjustDialog } from "./adjust-dialog";
+import { MovementHistoryButton } from "./movement-history";
 import { OpeningStockDialog } from "./opening-stock-dialog";
 import { RestockDialog } from "./restock-dialog";
 
@@ -22,6 +23,7 @@ export function StockActions({
       ) : null}
       <RestockDialog productId={productId} productName={productName} currentCost={currentCost} />
       <AdjustDialog productId={productId} productName={productName} currentQuantity={currentQuantity} />
+      <MovementHistoryButton productId={productId} productName={productName} />
     </div>
   );
 }
