@@ -4,3 +4,11 @@ import { twMerge } from "tailwind-merge";
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+/** Client-side idempotency key so a retried stock mutation cannot double-count. */
+export function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}

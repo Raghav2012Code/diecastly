@@ -198,6 +198,19 @@ export async function getProductMovements(
   return ok((data ?? []) as InventoryMovementWithProduct[]);
 }
 
+/** Product ids among the given set that already have an opening-stock movement. */
+export async function listInitializedProductIds(productIds: string[]): Promise<Result<string[]>> {
+  if (productIds.length === 0) return ok([]);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("inventory_movements")
+    .select("product_id")
+    .eq("movement_type", "initial")
+    .in("product_id", productIds);
+  if (error) return fail(error);
+  return ok(((data ?? []) as { product_id: string }[]).map((row) => row.product_id));
+}
+
 /** Lightweight options for the inventory filters. */
 export async function listInventoryCategoryOptions(): Promise<
   Result<{ id: string; name: string }[]>
