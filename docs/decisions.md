@@ -42,3 +42,4 @@ Concise record of approved decisions. Newest decisions appear at the end.
 | D36 | **Opening stock initialized at most once per product** | Partial unique index on `initial` movements; `set_initial_stock` is idempotent on retry |
 | D37 | **Server-side idempotency** | Same key reuses the original successful result; a different payment reusing a provider payment id is rejected; never UI-only |
 | D38 | **v1 is single-business, single-location, single-admin** | No tenant/workspace/organization abstractions; multi-tenant deferred until actually required |
+| D39 | **The till records only the applied amount** (`min(received, total)`); cash change due is shown but never recorded | The payments ledger holds money applied to the order, not tender; change is a counter detail, not revenue |

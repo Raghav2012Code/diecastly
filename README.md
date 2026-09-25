@@ -12,11 +12,14 @@ with Supabase as the entire backend.
 - **Phase 0 — foundation:** complete (app scaffold, auth, admin shell, guard, env handling).
 - **Phase 1 — database:** complete (schema, constraints, views, RPCs, RLS, tests).
 - **Phase 2 — catalog & inventory:** complete (products, categories, suppliers, images, opening stock, restock, adjustments, movement ledger).
-- **Phases 3–7:** not started (see `docs/roadmap.md`).
+- **Phase 3 — POS & payments:** complete (Record Sale with a live receipt, orders list and detail, payments and refunds, printable receipts).
+- **Phases 4–7:** not started (see `docs/roadmap.md`).
 
-> Browser-level QA still requires a running local stack: Docker is not installed on the
-> current machine, so the migrations and invariant tests have been validated against a real
-> PostgreSQL 18 cluster rather than `supabase start`.
+> Docker is not installed on the current machine. Phases 0–2 were validated against a real
+> PostgreSQL 18 cluster with a Supabase shim rather than `supabase start`; the Phase 3
+> invariant suite (`supabase/tests/07_phase3_pos_payments.sql`) is authored but still needs
+> `supabase test db` on a machine with the local stack. Browser-level QA likewise requires a
+> running local stack.
 
 ## Stack
 
