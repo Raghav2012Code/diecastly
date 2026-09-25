@@ -14,6 +14,7 @@ import type {
   ProductImageRow,
   ProductRow,
   ProductStatus,
+  SellableProduct,
   SupplierRow,
   VProductsAdminRow,
 } from "@/lib/types/database.types";
@@ -136,6 +137,70 @@ export async function getProduct(id: string): Promise<Result<VProductsAdminRow |
   const { data, error } = await supabase.from("v_products_admin").select("*").eq("id", id).maybeSingle();
   if (error) return fail(error);
   return ok((data as VProductsAdminRow | null) ?? null);
+}
+
+// ---------------------------------------------------------------------------
+// Sellable catalog (Record Sale / POS)
+// ---------------------------------------------------------------------------
+
+/** Upper bound on the working catalog streamed to the till. */
+export const SELLABLE_LIMIT = 2000;
+
+const SELLABLE_COLUMNS =
+  "id, name, sku, barcode, brand, series, selling_price, quantity, low_stock_threshold, primary_image_path, status";
+
+export type SellableCatalog = {
+  items: SellableProduct[];
+  total: number;
+  capped: boolean;
+};
+
+/**
+ * The active catalog for the till, loaded once so search is instant and a
+ * barcode scanner (type + Enter) needs no round-trip. `capped` tells the client
+ * whether it must fall back to `searchSellableProducts` for a term that has no
+ * local match.
+ */
+export async function listSellableProducts(): Promise<Result<SellableCatalog>> {
+  const supabase = await createClient();
+  const { data, error, count } = await supabase
+    .from("v_products_admin")
+    .select(SELLABLE_COLUMNS, { count: "exact" })
+    .eq("status", "active")
+    .order("name", { ascending: true })
+    .range(0, SELLABLE_LIMIT - 1);
+  if (error) return fail(error);
+
+  const items = (data ?? []) as unknown as SellableProduct[];
+  const total = count ?? items.length;
+  return ok({ items, total, capped: total > items.length });
+}
+
+/** Server-side search, used only when the local catalog has been capped. */
+export async function searchSellableProducts(
+  term: string,
+  limit = 30,
+): Promise<Result<SellableProduct[]>> {
+  const supabase = await createClient();
+  const cleaned = sanitizeSearch(term);
+  const capped = Math.min(50, Math.max(1, Math.trunc(limit)));
+
+  let query = supabase
+    .from("v_products_admin")
+    .select(SELLABLE_COLUMNS)
+    .eq("status", "active")
+    .order("name", { ascending: true })
+    .limit(capped);
+
+  if (cleaned) {
+    query = query.or(
+      `name.ilike.%${cleaned}%,sku.ilike.%${cleaned}%,barcode.ilike.%${cleaned}%,brand.ilike.%${cleaned}%`,
+    );
+  }
+
+  const { data, error } = await query;
+  if (error) return fail(error);
+  return ok((data ?? []) as unknown as SellableProduct[]);
 }
 
 export async function listProductImages(productId: string): Promise<Result<ProductImageRow[]>> {

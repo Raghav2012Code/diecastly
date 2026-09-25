@@ -1,15 +1,14 @@
 import { z } from "zod";
+import { PAYMENT_METHODS } from "@/lib/types/database.types";
 
-export const PAYMENT_METHODS = [
-  "cash",
-  "upi",
-  "cod",
-  "card",
-  "bank_transfer",
-  "other",
-] as const;
+export { PAYMENT_METHODS };
 
 export const paymentMethodSchema = z.enum(PAYMENT_METHODS);
+
+/** Largest single money value accepted from the client, in rupees. */
+const MAX_AMOUNT = 10_000_000;
+
+const idempotencyKeySchema = z.string().min(8).max(100);
 
 /**
  * POS line. v1 requires a strictly positive unit price: zero-value lines are
@@ -25,7 +24,7 @@ export const posLineSchema = z.object({
 });
 
 export const paymentInputSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.number().positive().max(MAX_AMOUNT),
   method: paymentMethodSchema,
   reference: z.string().max(200).optional(),
 });
@@ -42,7 +41,28 @@ export const posSaleInputSchema = z.object({
   payments: z.array(paymentInputSchema).min(1).optional(),
   customer: customerInputSchema.optional(),
   notes: z.string().max(1000).optional(),
-  idempotencyKey: z.string().min(8).max(100),
+  idempotencyKey: idempotencyKeySchema,
+});
+
+/**
+ * Recording a payment against an existing order. Always appends to the ledger;
+ * never changes fulfilment status (enforced by the RPC).
+ */
+export const recordPaymentSchema = z.object({
+  orderId: z.string().uuid(),
+  amount: z.number().positive().max(MAX_AMOUNT),
+  method: paymentMethodSchema,
+  reference: z.string().max(200).optional(),
+  idempotencyKey: idempotencyKeySchema,
+});
+
+/** A compensating refund entry, capped at what was actually received. */
+export const refundPaymentSchema = z.object({
+  orderId: z.string().uuid(),
+  amount: z.number().positive().max(MAX_AMOUNT),
+  method: paymentMethodSchema.default("other"),
+  reason: z.string().max(200).optional(),
+  idempotencyKey: idempotencyKeySchema,
 });
 
 export const onlineOrderInputSchema = z.object({
@@ -57,7 +77,7 @@ export const onlineOrderInputSchema = z.object({
   }),
   paymentMethod: z.enum(["upi", "cod"]),
   notes: z.string().max(1000).optional(),
-  idempotencyKey: z.string().min(8).max(100),
+  idempotencyKey: idempotencyKeySchema,
 });
 
 /**
@@ -74,3 +94,5 @@ export function normalizePhone(input: string): string {
 export type PosLineInput = z.infer<typeof posLineSchema>;
 export type PosSaleInput = z.infer<typeof posSaleInputSchema>;
 export type OnlineOrderInput = z.infer<typeof onlineOrderInputSchema>;
+export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+export type RefundPaymentInput = z.infer<typeof refundPaymentSchema>;

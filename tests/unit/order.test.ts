@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizePhone, posLineSchema, posSaleInputSchema } from "@/lib/validation/order";
+import {
+  normalizePhone,
+  posLineSchema,
+  posSaleInputSchema,
+  recordPaymentSchema,
+  refundPaymentSchema,
+} from "@/lib/validation/order";
 
 describe("posLineSchema", () => {
   const base = { productId: "11111111-1111-1111-1111-111111111111", quantity: 1 };
@@ -57,5 +63,51 @@ describe("normalizePhone", () => {
     expect(normalizePhone("9876543210")).toBe("+919876543210");
     expect(normalizePhone("+91 98765 43210")).toBe("+919876543210");
     expect(normalizePhone("919876543210")).toBe("+919876543210");
+  });
+});
+
+const ORDER_ID = "22222222-2222-2222-2222-222222222222";
+
+describe("recordPaymentSchema", () => {
+  const valid = {
+    orderId: ORDER_ID,
+    amount: 250,
+    method: "cash" as const,
+    idempotencyKey: "pay-key-0001",
+  };
+
+  it("accepts a valid payment", () => {
+    expect(recordPaymentSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it("rejects a non-positive amount", () => {
+    expect(recordPaymentSchema.safeParse({ ...valid, amount: 0 }).success).toBe(false);
+    expect(recordPaymentSchema.safeParse({ ...valid, amount: -1 }).success).toBe(false);
+  });
+
+  it("rejects an unknown method", () => {
+    expect(recordPaymentSchema.safeParse({ ...valid, method: "bitcoin" }).success).toBe(false);
+  });
+
+  it("requires an idempotency key", () => {
+    expect(recordPaymentSchema.safeParse({ ...valid, idempotencyKey: "short" }).success).toBe(false);
+  });
+});
+
+describe("refundPaymentSchema", () => {
+  const valid = {
+    orderId: ORDER_ID,
+    amount: 50,
+    idempotencyKey: "refund-key-0001",
+  };
+
+  it("accepts a valid refund and defaults the method to other", () => {
+    const parsed = refundPaymentSchema.safeParse(valid);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.method).toBe("other");
+  });
+
+  it("rejects a non-positive amount", () => {
+    expect(refundPaymentSchema.safeParse({ ...valid, amount: 0 }).success).toBe(false);
   });
 });
