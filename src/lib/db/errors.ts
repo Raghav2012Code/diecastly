@@ -1,0 +1,71 @@
+/**
+ * Translates database/PostgREST errors into friendly, field-aware messages.
+ * Raw SQL and constraint names must never reach the interface.
+ */
+
+export type FriendlyError = { message: string; field?: string };
+
+export type Result<T> = { ok: true; data: T } | { ok: false; error: FriendlyError };
+
+export function ok<T>(data: T): Result<T> {
+  return { ok: true, data };
+}
+
+export function fail(error: unknown): { ok: false; error: FriendlyError } {
+  return { ok: false, error: describeDbError(error) };
+}
+
+type DbErrorLike = { code?: string | null; message?: string | null; details?: string | null };
+
+const UNIQUE_FIELDS: Record<string, { field: string; message: string }> = {
+  products_slug_key: { field: "slug", message: "That URL slug is already in use." },
+  products_sku_key: { field: "sku", message: "That SKU is already in use." },
+  products_barcode_key: { field: "barcode", message: "That barcode is already in use." },
+  categories_slug_key: { field: "slug", message: "That category slug is already in use." },
+};
+
+const MESSAGES: Array<[string, string]> = [
+  ["insufficient_stock", "Not enough stock available for that change."],
+  ["product_not_found", "That product no longer exists."],
+  ["product_inactive", "Only active products can be sold."],
+  ["invalid_quantity", "Enter a quantity greater than zero."],
+  ["invalid_delta", "Enter a non-zero change."],
+  ["invalid_reason", "Choose a valid reason."],
+  ["invalid_unit_price", "Unit price must be greater than zero."],
+  ["invalid_discount", "The discount is larger than the line value."],
+  ["not_authorized", "You are not authorized to do that."],
+  ["already_initialized", "Opening stock has already been recorded for this product."],
+];
+
+export function describeDbError(error: unknown): FriendlyError {
+  if (!error || typeof error !== "object") {
+    return { message: "Something went wrong. Please try again." };
+  }
+
+  const { code, message, details } = error as DbErrorLike;
+  const haystack = `${message ?? ""} ${details ?? ""}`;
+
+  if (code === "23505" || haystack.includes("duplicate key")) {
+    const match = Object.entries(UNIQUE_FIELDS).find(([constraint]) => haystack.includes(constraint));
+    if (match) {
+      return { field: match[1].field, message: match[1].message };
+    }
+    return { message: "A record with these details already exists." };
+  }
+
+  if (code === "23503") {
+    return { message: "That reference no longer exists. Refresh and try again." };
+  }
+
+  if (code === "42501") {
+    return { message: "You are not authorized to do that." };
+  }
+
+  for (const [needle, friendly] of MESSAGES) {
+    if (haystack.includes(needle)) {
+      return { message: friendly };
+    }
+  }
+
+  return { message: "Something went wrong. Please try again." };
+}
