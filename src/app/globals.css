@@ -2,46 +2,94 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Diecastly admin identity.
+ *
+ * Grounded in the subject: a diecast collector's back office. The base is a
+ * cool newsprint grey (not warm cream), structure is deep petrol, and the one
+ * bold accent is "track orange" — the colour of the track, used only for
+ * action and attention. Numbers are tabular everywhere; identifiers are the
+ * only place monospace appears.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --background: 75 9% 94%;
+    --foreground: 210 8% 10%;
+
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --radius: 0.5rem;
+    --card-foreground: 210 8% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 8% 10%;
+
+    --primary: 21 90% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 75 8% 90%;
+    --secondary-foreground: 210 8% 12%;
+
+    --muted: 75 8% 90%;
+    --muted-foreground: 212 8% 38%;
+
+    --accent: 21 60% 94%;
+    --accent-foreground: 21 80% 30%;
+
+    --destructive: 4 72% 41%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 147 45% 32%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 33 100% 33%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 90 5% 84%;
+    --input: 90 5% 76%;
+    --ring: 21 90% 48%;
+
+    --petrol: 187 62% 15%;
+    --petrol-foreground: 75 9% 94%;
+
+    --radius: 0.25rem;
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
+    --background: 200 13% 8%;
+    --foreground: 75 9% 94%;
+
+    --card: 200 14% 11%;
+    --card-foreground: 75 9% 94%;
+
+    --popover: 200 14% 11%;
+    --popover-foreground: 75 9% 94%;
+
+    --primary: 21 90% 55%;
+    --primary-foreground: 200 13% 8%;
+
+    --secondary: 200 10% 16%;
+    --secondary-foreground: 75 9% 94%;
+
+    --muted: 200 10% 16%;
+    --muted-foreground: 210 8% 64%;
+
+    --accent: 187 30% 20%;
+    --accent-foreground: 75 9% 94%;
+
+    --destructive: 4 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 147 40% 48%;
+    --success-foreground: 200 13% 8%;
+
+    --warning: 35 90% 55%;
+    --warning-foreground: 200 13% 8%;
+
+    --border: 200 8% 22%;
+    --input: 200 8% 28%;
+    --ring: 21 90% 55%;
+
+    --petrol: 187 40% 10%;
+    --petrol-foreground: 75 9% 94%;
   }
 }
 
@@ -49,7 +97,51 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "cv05" 1;
+  }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.22);
+  }
+}
+
+@layer utilities {
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+dialog[open] > .dialog-panel {
+  animation: dialog-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog[open] > .dialog-panel {
+    animation: none;
   }
 }
