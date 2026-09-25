@@ -130,6 +130,13 @@ export const imageAltSchema = z.object({
   altText: optionalText(200),
 });
 
+export const productImageInputSchema = z.object({
+  productId: z.string().uuid(),
+  storagePath: z.string().trim().min(1).max(400),
+  altText: optionalText(200),
+  isPrimary: z.boolean().default(false),
+});
+
 export type ProductInput = z.infer<typeof productInputSchema>;
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
