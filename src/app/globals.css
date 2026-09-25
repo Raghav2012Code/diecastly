@@ -50,6 +50,12 @@
     --petrol: 187 62% 15%;
     --petrol-foreground: 75 9% 94%;
 
+    /* The receipt is its own material: warm paper against the cool app ground. */
+    --receipt: 44 60% 99%;
+    --receipt-foreground: 210 8% 10%;
+    --receipt-muted: 45 10% 37%;
+    --receipt-line: 44 12% 86%;
+
     --radius: 0.25rem;
   }
 
@@ -90,6 +96,11 @@
 
     --petrol: 187 40% 10%;
     --petrol-foreground: 75 9% 94%;
+
+    --receipt: 44 24% 95%;
+    --receipt-foreground: 210 8% 10%;
+    --receipt-muted: 45 8% 32%;
+    --receipt-line: 44 10% 78%;
   }
 }
 
@@ -136,6 +147,16 @@
   }
 }
 
+/* Answers the seller's action: the line just added flashes once. */
+@keyframes line-in {
+  from {
+    background-color: hsl(var(--primary) / 0.14);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
 dialog[open] > .dialog-panel {
   animation: dialog-in 160ms ease-out;
 }
@@ -143,5 +164,29 @@ dialog[open] > .dialog-panel {
 @media (prefers-reduced-motion: reduce) {
   dialog[open] > .dialog-panel {
     animation: none;
+  }
+}
+
+/*
+ * Printing: hide the app chrome and render only the receipt sheet. The receipt
+ * component carries `data-receipt`; everything else marked `print:hidden` or
+ * `.no-print` is dropped.
+ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  [data-receipt] {
+    border: none !important;
+    box-shadow: none !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  @page {
+    margin: 8mm;
   }
 }

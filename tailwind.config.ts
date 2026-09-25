@@ -61,6 +61,12 @@ const config: Config = {
           DEFAULT: "hsl(var(--petrol))",
           foreground: "hsl(var(--petrol-foreground))",
         },
+        receipt: {
+          DEFAULT: "hsl(var(--receipt))",
+          foreground: "hsl(var(--receipt-foreground))",
+          muted: "hsl(var(--receipt-muted))",
+          line: "hsl(var(--receipt-line))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
