@@ -388,6 +388,84 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- 12. v_product_images_public: the public gallery view.
+--
+--     Added for the product-detail gallery, which the previous public surface
+--     could not serve: v_products_public carries only primary_image_path, and
+--     anon has no base-table grant on product_images. A new object reachable by
+--     anon is a new public surface, so both its grant and its row filter are
+--     asserted here rather than assumed.
+-- ---------------------------------------------------------------------------
+
+-- A draft product and an archived one, to prove the filter is status-based.
+insert into public.products (id, name, slug, status, selling_price, purchase_cost, low_stock_threshold)
+values ('32000000-0000-0000-0000-000000000004', 'Gallery Active', 'gallery-active', 'active', 100, 40, 2)
+on conflict (id) do nothing;
+insert into public.products (id, name, slug, status, selling_price, purchase_cost, low_stock_threshold)
+values ('32000000-0000-0000-0000-000000000005', 'Gallery Draft', 'gallery-draft', 'draft', 100, 40, 2)
+on conflict (id) do nothing;
+insert into public.products (id, name, slug, status, selling_price, purchase_cost, low_stock_threshold)
+values ('32000000-0000-0000-0000-000000000006', 'Gallery Archived', 'gallery-archived', 'archived', 100, 40, 2)
+on conflict (id) do nothing;
+
+insert into public.product_images (product_id, storage_path, is_primary, sort_order) values
+  ('32000000-0000-0000-0000-000000000004', 'gallery/active-1.png', true,  0),
+  ('32000000-0000-0000-0000-000000000004', 'gallery/active-2.png', false, 1),
+  ('32000000-0000-0000-0000-000000000005', 'gallery/draft-1.png',   true,  0),
+  ('32000000-0000-0000-0000-000000000006', 'gallery/archived-1.png', true, 0);
+
+set request.jwt.claims = '{}';
+
+do $$
+declare
+  v_visible integer;
+  v_leaked text;
+begin
+  -- Read as an anonymous visitor, which is the whole point of the view.
+  perform set_config('request.jwt.claims', '{}', false);
+  set local role anon;
+
+  select count(*) into v_visible
+    from public.v_product_images_public
+   where product_id = '32000000-0000-0000-0000-000000000004';
+
+  if v_visible <> 2 then
+    raise exception 'FAIL expected the 2 images of the active product, saw %', v_visible;
+  end if;
+
+  -- The security property: a draft or archived product's photography must be
+  -- unreachable, or unpublishing a product would leave its images public.
+  select string_agg(distinct storage_path, ',') into v_leaked
+    from public.v_product_images_public
+   where storage_path like 'gallery/draft%' or storage_path like 'gallery/archived%';
+
+  if v_leaked is not null then
+    raise exception 'FAIL the view exposed images of a non-active product: %', v_leaked;
+  end if;
+
+  reset role;
+  raise notice 'PASS the gallery view shows only active products'' images';
+end
+$$;
+
+-- The grant itself, asserted rather than assumed.
+do $$
+begin
+  if not has_table_privilege('anon', 'public.v_product_images_public', 'select') then
+    raise exception 'FAIL anon cannot select the public gallery view';
+  end if;
+  if not has_table_privilege('authenticated', 'public.v_product_images_public', 'select') then
+    raise exception 'FAIL authenticated cannot select the public gallery view';
+  end if;
+  -- anon must NOT have gained base-table access as a side effect of this view.
+  if has_table_privilege('anon', 'public.product_images', 'select') then
+    raise exception 'FAIL anon can select the product_images base table directly';
+  end if;
+  raise notice 'PASS the gallery view is granted to both client roles and the base table is not';
+end
+$$;
+
 -- RAISE NOTICE is invisible in single-user mode; the success signal is a SELECT
 -- because single-user echoes result rows to stdout.
 select 'ALL ASSERTIONS PASSED' as result;
