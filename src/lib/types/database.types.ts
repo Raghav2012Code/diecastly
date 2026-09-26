@@ -84,6 +84,8 @@ export type VProductsAdminRow = ProductRow & {
   category_name: string | null;
   supplier_name: string | null;
   primary_image_path: string | null;
+  is_out_of_stock: boolean;
+  is_low_stock: boolean;
 };
 
 /** `v_product_stock` — the authoritative per-product stock read model. */
@@ -101,6 +103,8 @@ export type VProductStockRow = {
   category_id: string | null;
   supplier_id: string | null;
   updated_at: string;
+  /** Later of products.updated_at and inventory_stock.updated_at. */
+  stock_changed_at: string;
 };
 
 export type InventoryMovementRow = {
@@ -129,6 +133,8 @@ export type InventoryRow = VProductStockRow & {
   slug: string | null;
   supplier_name: string | null;
   primary_image_path: string | null;
+  is_out_of_stock: boolean;
+  is_low_stock: boolean;
 };
 
 // ---------------------------------------------------------------------------

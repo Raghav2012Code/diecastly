@@ -122,8 +122,13 @@ export async function listInventory(params: InventoryListParams = {}): Promise<R
       break;
   }
 
-  if (params.scope !== "archived" && params.categoryId) query = query.eq("category_id", params.categoryId);
-  if (params.scope !== "archived" && params.supplierId) query = query.eq("supplier_id", params.supplierId);
+  // Every filter applies in every scope. The stock view carries category_id and
+  // supplier_id for archived products too, so there is no reason to skip these
+  // two when scope is "archived": doing so left both controls enabled and
+  // populated while the query ignored them, while the free-text search below
+  // was still applied, so the three visible filters did not agree.
+  if (params.categoryId) query = query.eq("category_id", params.categoryId);
+  if (params.supplierId) query = query.eq("supplier_id", params.supplierId);
 
   const term = params.search ? sanitizeSearch(params.search) : "";
   if (term) query = query.or(`name.ilike.%${term}%,sku.ilike.%${term}%`);
@@ -136,7 +141,9 @@ export async function listInventory(params: InventoryListParams = {}): Promise<R
       query = query.order("low_stock_threshold", { ascending: false });
       break;
     case "newest":
-      query = query.order("updated_at", { ascending: false });
+      // Reads the timestamp stock operations actually move, not the one only
+      // metadata writes touch - otherwise this option reorders nothing.
+      query = query.order("stock_changed_at", { ascending: false });
       break;
     default:
       query = query.order("name", { ascending: true });
@@ -211,7 +218,14 @@ export async function listInitializedProductIds(productIds: string[]): Promise<R
   return ok(((data ?? []) as { product_id: string }[]).map((row) => row.product_id));
 }
 
-/** Lightweight options for the inventory filters. */
+/**
+ * Lightweight options for the inventory filters.
+ *
+ * Inactive categories and suppliers are included: an archived product
+ * references one, and omitting it from the list would make those products
+ * unreachable by filter, which is the opposite of what the archived scope is
+ * for.
+ */
 export async function listInventoryCategoryOptions(): Promise<
   Result<{ id: string; name: string }[]>
 > {
@@ -219,7 +233,6 @@ export async function listInventoryCategoryOptions(): Promise<
   const { data, error } = await supabase
     .from("categories")
     .select("id, name")
-    .eq("is_active", true)
     .order("name", { ascending: true });
   if (error) return fail(error);
   return ok((data ?? []) as { id: string; name: string }[]);
@@ -232,7 +245,6 @@ export async function listInventorySupplierOptions(): Promise<
   const { data, error } = await supabase
     .from("suppliers")
     .select("id, name")
-    .eq("is_active", true)
     .order("name", { ascending: true });
   if (error) return fail(error);
   return ok((data ?? []) as { id: string; name: string }[]);

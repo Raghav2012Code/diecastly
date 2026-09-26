@@ -63,15 +63,20 @@ function sanitizeSearch(term: string): string {
     .trim();
 }
 
-async function productIdsForStock(
-  supabase: SupabaseClient,
-  filter: ProductStockFilter,
-): Promise<Result<string[]>> {
-  const column = filter === "low" ? "is_low_stock" : "is_out_of_stock";
-  const { data, error } = await supabase.from("v_product_stock").select("product_id").eq(column, true);
-  if (error) return fail(error);
-  return ok(((data ?? []) as { product_id: string }[]).map((row) => row.product_id));
-}
+/**
+ * Column predicates for the stock filters, applied inside the paginated query.
+ *
+ * This used to fetch the id of *every* matching product with no limit and then
+ * pass that whole list to `.in()`, which embeds it in the request URL. Past a
+ * few thousand matching products the request outgrew what the query layer
+ * accepts and the product list stopped loading. Filtering in the query keeps
+ * the request bounded and the count exact; capping the id list instead would
+ * silently truncate the results and report a count that is not the true count.
+ */
+const STOCK_FILTER_COLUMN = {
+  low: "is_low_stock",
+  out: "is_out_of_stock",
+} as const;
 
 export async function listProducts(params: ProductListParams = {}): Promise<Result<ProductListPage>> {
   const supabase = await createClient();
@@ -80,18 +85,8 @@ export async function listProducts(params: ProductListParams = {}): Promise<Resu
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let stockIds: string[] | null = null;
-  if (params.stock) {
-    const idsResult = await productIdsForStock(supabase, params.stock);
-    if (!idsResult.ok) return idsResult;
-    stockIds = idsResult.data;
-    if (stockIds.length === 0) {
-      return ok({ rows: [], total: 0, page, pageSize });
-    }
-  }
-
   let query = supabase.from("v_products_admin").select("*", { count: "exact" });
-  if (stockIds) query = query.in("id", stockIds);
+  if (params.stock) query = query.eq(STOCK_FILTER_COLUMN[params.stock], true);
   if (params.status && params.status !== "all") query = query.eq("status", params.status);
   if (params.categoryId) query = query.eq("category_id", params.categoryId);
   if (params.brand) query = query.ilike("brand", params.brand.trim());
@@ -242,20 +237,38 @@ export async function listBrands(): Promise<Result<string[]>> {
   return ok(brands);
 }
 
+/**
+ * Finds a slug that is free to use.
+ *
+ * `excludeId` is the row being updated. Without it the helper treats the row's
+ * own current slug as a collision, so saving a product with an empty slug field
+ * rewrote its public URL from `ferrari-458` to `ferrari-458-2` — silently, and
+ * breaking any existing link to the product.
+ */
 async function uniqueSlug(
   supabase: SupabaseClient,
   table: "products" | "categories",
   base: string,
+  excludeId?: string,
 ): Promise<Result<string>> {
   const safeBase = base || "item";
   let candidate = safeBase;
+  // Start at the first variant so the sequence has no gap, and stay
+  // deterministic: a slug must be reproducible, so there is no timestamp
+  // fallback.
   for (let attempt = 1; attempt <= 50; attempt += 1) {
-    const { data, error } = await supabase.from(table).select("id").eq("slug", candidate).maybeSingle();
+    const { data, error } = await supabase
+      .from(table)
+      .select("id")
+      .eq("slug", candidate)
+      .neq("id", excludeId ?? "00000000-0000-0000-0000-000000000000");
     if (error) return fail(error);
     if (!data) return ok(candidate);
-    candidate = `${safeBase}-${attempt + 1}`;
+    candidate = `${safeBase}-${attempt}`;
   }
-  return ok(`${safeBase}-${Date.now().toString(36)}`);
+  return fail({
+    message: `Could not find a free slug for "${safeBase}" after 50 attempts. Set one explicitly.`,
+  });
 }
 
 function productColumns(input: ProductInput, slug: string) {
@@ -299,7 +312,7 @@ export async function updateProduct(id: string, input: ProductUpdateInput): Prom
 
   let slug = input.slug;
   if (!slug) {
-    const slugResult = await uniqueSlug(supabase, "products", slugify(input.name));
+    const slugResult = await uniqueSlug(supabase, "products", slugify(input.name), id);
     if (!slugResult.ok) return slugResult;
     slug = slugResult.data;
   }
@@ -392,7 +405,7 @@ export async function updateCategory(id: string, input: CategoryInput): Promise<
 
   let slug = input.slug;
   if (!slug) {
-    const slugResult = await uniqueSlug(supabase, "categories", slugify(input.name));
+    const slugResult = await uniqueSlug(supabase, "categories", slugify(input.name), id);
     if (!slugResult.ok) return slugResult;
     slug = slugResult.data;
   }

@@ -9,19 +9,16 @@ import { Pagination } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MovementFilters } from "@/components/admin/movement-filters";
 import { listMovements } from "@/lib/inventory/data";
+import { lastPage, resolveListState } from "@/lib/list-state";
+import { MOVEMENT_SOURCE_VALUES, MOVEMENT_TYPE_VALUES, oneOf, pageNumber } from "@/lib/list-params";
 import { movementSourceLabel, movementTypeLabel, movementTypeTone } from "@/lib/display";
 import { formatDateTimeIST } from "@/lib/dates";
-import type { MovementType } from "@/lib/types/database.types";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Movements" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-
-function one(value: string | string[] | undefined): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
 
 function Delta({ value }: { value: number }) {
   const positive = value > 0;
@@ -34,13 +31,26 @@ function Delta({ value }: { value: number }) {
 
 export default async function MovementsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const type = one(params.type) as MovementType | undefined;
-  const source = one(params.source) as "admin" | "storefront" | "system" | undefined;
-  const page = Number.parseInt(one(params.page) ?? "1", 10) || 1;
+  const type = oneOf(params.type, MOVEMENT_TYPE_VALUES);
+  const source = oneOf(params.source, MOVEMENT_SOURCE_VALUES);
+  const page = pageNumber(params.page);
   const hasFilters = Boolean(type || source);
 
   const list = await listMovements({ movementType: type ?? null, source: source ?? null, page, pageSize: 25 });
   const rows = list.ok ? list.data.rows : [];
+  const total = list.ok ? list.data.total : 0;
+  const outOfRange =
+    resolveListState({ ok: list.ok, rowCount: rows.length, total, page, pageSize: 25, hasFilters }) ===
+    "out-of-range";
+  const lastPageHref = (() => {
+    const query = new URLSearchParams();
+    if (type) query.set("type", type);
+    if (source) query.set("source", source);
+    const target = lastPage(total, 25);
+    if (target > 1) query.set("page", String(target));
+    const qs = query.toString();
+    return qs ? `/admin/inventory/movements?${qs}` : "/admin/inventory/movements";
+  })();
 
   return (
     <div className="space-y-6">
@@ -70,19 +80,33 @@ export default async function MovementsPage({ searchParams }: { searchParams: Se
         />
       ) : rows.length === 0 ? (
         <EmptyState
-          title={hasFilters ? "No movements match these filters" : "No movements yet"}
+          title={
+            outOfRange
+              ? "That page is past the end"
+              : hasFilters
+                ? "No movements match these filters"
+                : "No movements yet"
+          }
           description={
-            hasFilters
-              ? "Try a different type or source, or clear the filters."
-              : "Restock, sell or adjust a product and the ledger will fill in here."
+            outOfRange
+              ? `There ${total === 1 ? "is 1 movement" : `are ${total} movements`} in total, which do not reach page ${page}.`
+              : hasFilters
+                ? "Try a different type or source, or clear the filters."
+                : "Restock, sell or adjust a product and the ledger will fill in here."
           }
           action={
-            <Link
-              href={hasFilters ? "/admin/inventory/movements" : "/admin/inventory"}
-              className={buttonVariants({ variant: "outline" })}
-            >
-              {hasFilters ? "Clear filters" : "Go to stock"}
-            </Link>
+            outOfRange ? (
+              <Link href={lastPageHref} className={buttonVariants()}>
+                Go to page {lastPage(total, 25)}
+              </Link>
+            ) : (
+              <Link
+                href={hasFilters ? "/admin/inventory/movements" : "/admin/inventory"}
+                className={buttonVariants({ variant: "outline" })}
+              >
+                {hasFilters ? "Clear filters" : "Go to stock"}
+              </Link>
+            )
           }
         />
       ) : (
@@ -144,6 +168,18 @@ export default async function MovementsPage({ searchParams }: { searchParams: Se
           />
         </>
       )}
+
+      {/* Pagination also renders when the page has no rows, so a page that no
+          longer exists is still recoverable. */}
+      {rows.length === 0 && total > 0 ? (
+        <Pagination
+          page={page}
+          pageSize={25}
+          total={total}
+          basePath="/admin/inventory/movements"
+          params={{ type, source }}
+        />
+      ) : null}
     </div>
   );
 }

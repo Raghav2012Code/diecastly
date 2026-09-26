@@ -11,29 +11,34 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StockBar, stockTone } from "@/components/admin/stock-bar";
 import { ProductThumb } from "@/components/admin/product-thumb";
 import { ProductFilters } from "@/components/admin/product-filters";
-import { listBrands, listCategories, listProducts, type ProductSort, type ProductStockFilter } from "@/lib/catalog/data";
+import { listBrands, listCategories, listProducts } from "@/lib/catalog/data";
+import { lastPage, resolveListState } from "@/lib/list-state";
+import {
+  one,
+  oneOf,
+  oneOfWithAll,
+  pageNumber,
+  PRODUCT_SORT_VALUES,
+  PRODUCT_STATUS_VALUES,
+  PRODUCT_STOCK_VALUES,
+} from "@/lib/list-params";
 import { productStatusLabel, productStatusTone } from "@/lib/display";
 import { formatINR } from "@/lib/validation/money";
-import type { ProductStatus } from "@/lib/types/database.types";
 import { ArchiveProductButton } from "./archive-product-button";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-function one(value: string | string[] | undefined): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
 export default async function ProductsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const search = one(params.search);
-  const status = (one(params.status) ?? "all") as ProductStatus | "all";
+  const status = oneOfWithAll(params.status, PRODUCT_STATUS_VALUES);
   const category = one(params.category);
   const brand = one(params.brand);
-  const stock = one(params.stock) as ProductStockFilter | undefined;
-  const sort = (one(params.sort) ?? "newest") as ProductSort;
-  const page = Number.parseInt(one(params.page) ?? "1", 10) || 1;
+  const stock = oneOf(params.stock, PRODUCT_STOCK_VALUES);
+  const sort = oneOf(params.sort, PRODUCT_SORT_VALUES) ?? "newest";
+  const page = pageNumber(params.page);
 
   const [list, categories, brands] = await Promise.all([
     listProducts({ search, status, categoryId: category, brand, stock, sort, page, pageSize: 20 }),
@@ -45,6 +50,25 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
   const total = list.ok ? list.data.total : 0;
   const maxQuantity = Math.max(1, ...rows.map((row) => row.quantity));
   const hasFilters = Boolean(search || status !== "all" || category || brand || stock);
+
+  // A page past the end must not fall into the "add your first product" branch:
+  // that tells the admin a populated catalog is empty and invites a duplicate.
+  const outOfRange =
+    resolveListState({ ok: list.ok, rowCount: rows.length, total, page, pageSize: 20, hasFilters }) ===
+    "out-of-range";
+  const lastPageHref = (() => {
+    const query = new URLSearchParams();
+    if (search) query.set("search", search);
+    if (status !== "all") query.set("status", status);
+    if (category) query.set("category", category);
+    if (brand) query.set("brand", brand);
+    if (stock) query.set("stock", stock);
+    if (sort !== "newest") query.set("sort", sort);
+    const target = lastPage(total, 20);
+    if (target > 1) query.set("page", String(target));
+    const qs = query.toString();
+    return qs ? `/admin/products?${qs}` : "/admin/products";
+  })();
 
   return (
     <div className="space-y-6">
@@ -84,14 +108,26 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
         />
       ) : rows.length === 0 ? (
         <EmptyState
-          title={hasFilters ? "No products match these filters" : "Add your first product"}
+          title={
+            outOfRange
+              ? "That page is past the end"
+              : hasFilters
+                ? "No products match these filters"
+                : "Add your first product"
+          }
           description={
-            hasFilters
-              ? "Try a different search, or clear the filters to see the whole catalog."
-              : "Create a product to list it for sale, then set its opening stock."
+            outOfRange
+              ? `There ${total === 1 ? "is 1 product" : `are ${total} products`} in total, which do not reach page ${page}.`
+              : hasFilters
+                ? "Try a different search, or clear the filters to see the whole catalog."
+                : "Create a product to list it for sale, then set its opening stock."
           }
           action={
-            hasFilters ? (
+            outOfRange ? (
+              <Link href={lastPageHref} className={buttonVariants()}>
+                Go to page {lastPage(total, 20)}
+              </Link>
+            ) : hasFilters ? (
               <Link href="/admin/products" className={buttonVariants({ variant: "outline" })}>
                 Clear filters
               </Link>
@@ -196,6 +232,19 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
           />
         </>
       )}
+
+      {/* Pagination also renders when the page has no rows. The control already
+          clamps to the last valid page; hiding it on the empty path removed the
+          only way back from a page that no longer exists. */}
+      {rows.length === 0 && total > 0 ? (
+        <Pagination
+          page={page}
+          pageSize={20}
+          total={total}
+          basePath="/admin/products"
+          params={{ search, status: status === "all" ? undefined : status, category, brand, stock, sort }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -22,8 +22,6 @@ import type {
  * `lib/db/rpc.ts` — this module never writes them.
  */
 
-export type OrderSort = "newest" | "oldest" | "total";
-
 export type OrderListParams = {
   search?: string;
   status?: OrderStatus | "all";
@@ -31,7 +29,6 @@ export type OrderListParams = {
   channel?: OrderChannel | "all";
   from?: string;
   to?: string;
-  sort?: OrderSort;
   page?: number;
   pageSize?: number;
 };
@@ -94,17 +91,10 @@ export async function listOrders(params: OrderListParams = {}): Promise<Result<O
   const toIso = params.to ? istBoundary(params.to, true) : null;
   if (toIso) query = query.lte("created_at", toIso);
 
-  switch (params.sort) {
-    case "oldest":
-      query = query.order("created_at", { ascending: true });
-      break;
-    case "total":
-      query = query.order("total", { ascending: false });
-      break;
-    default:
-      query = query.order("created_at", { ascending: false });
-      break;
-  }
+  // Newest first. There is no sort control on this list; a `sort` parameter here
+  // had no caller and was dead code.
+  query = query.order("created_at", { ascending: false });
+
 
   query = query.range(from, to);
 

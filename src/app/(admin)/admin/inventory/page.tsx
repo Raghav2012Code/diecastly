@@ -15,10 +15,10 @@ import {
   listInventory,
   listInventoryCategoryOptions,
   listInventorySupplierOptions,
-  type InventoryScope,
-  type InventorySort,
 } from "@/lib/inventory/data";
 import { productStatusLabel, productStatusTone } from "@/lib/display";
+import { lastPage, resolveListState } from "@/lib/list-state";
+import { INVENTORY_SCOPE_VALUES, INVENTORY_SORT_VALUES, one, oneOf, oneOfWithAll, pageNumber } from "@/lib/list-params";
 import { formatINR, multiplyMoney } from "@/lib/validation/money";
 import { ThresholdEditor } from "./threshold-editor";
 import { StockActions } from "./stock-actions";
@@ -28,18 +28,14 @@ export const metadata = { title: "Inventory" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-function one(value: string | string[] | undefined): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
 export default async function InventoryPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const search = one(params.search);
-  const scope = (one(params.scope) ?? "all") as InventoryScope;
+  const scope = oneOfWithAll(params.scope, INVENTORY_SCOPE_VALUES);
   const category = one(params.category);
   const supplier = one(params.supplier);
-  const sort = (one(params.sort) ?? "name") as InventorySort;
-  const page = Number.parseInt(one(params.page) ?? "1", 10) || 1;
+  const sort = oneOf(params.sort, INVENTORY_SORT_VALUES) ?? "name";
+  const page = pageNumber(params.page);
 
   const [list, categories, suppliers] = await Promise.all([
     listInventory({ search, scope, categoryId: category, supplierId: supplier, sort, page, pageSize: 20 }),
@@ -50,6 +46,24 @@ export default async function InventoryPage({ searchParams }: { searchParams: Se
   const rows = list.ok ? list.data.rows : [];
   const maxQuantity = Math.max(1, ...rows.map((row) => row.quantity));
   const hasFilters = Boolean(search || scope !== "all" || category || supplier);
+  const total = list.ok ? list.data.total : 0;
+
+  // A page past the end must not render "no products match these filters".
+  const outOfRange =
+    resolveListState({ ok: list.ok, rowCount: rows.length, total, page, pageSize: 20, hasFilters }) ===
+    "out-of-range";
+  const lastPageHref = (() => {
+    const query = new URLSearchParams();
+    if (search) query.set("search", search);
+    if (scope !== "all") query.set("scope", scope);
+    if (category) query.set("category", category);
+    if (supplier) query.set("supplier", supplier);
+    if (sort !== "name") query.set("sort", sort);
+    const target = lastPage(total, 20);
+    if (target > 1) query.set("page", String(target));
+    const qs = query.toString();
+    return qs ? `/admin/inventory?${qs}` : "/admin/inventory";
+  })();
 
   let initialized = new Set<string>();
   if (rows.length > 0) {
@@ -94,14 +108,26 @@ export default async function InventoryPage({ searchParams }: { searchParams: Se
         />
       ) : rows.length === 0 ? (
         <EmptyState
-          title={hasFilters ? "No products match these filters" : "No products yet"}
+          title={
+            outOfRange
+              ? "That page is past the end"
+              : hasFilters
+                ? "No products match these filters"
+                : "No products yet"
+          }
           description={
-            hasFilters
-              ? "Try a different search, or clear the filters to see all stock."
-              : "Add a product first, then record its opening stock here."
+            outOfRange
+              ? `There ${total === 1 ? "is 1 product" : `are ${total} products`} in total, which do not reach page ${page}.`
+              : hasFilters
+                ? "Try a different search, or clear the filters to see all stock."
+                : "Add a product first, then record its opening stock here."
           }
           action={
-            hasFilters ? (
+            outOfRange ? (
+              <Link href={lastPageHref} className={buttonVariants()}>
+                Go to page {lastPage(total, 20)}
+              </Link>
+            ) : hasFilters ? (
               <Link href="/admin/inventory" className={buttonVariants({ variant: "outline" })}>
                 Clear filters
               </Link>
@@ -198,6 +224,24 @@ export default async function InventoryPage({ searchParams }: { searchParams: Se
           />
         </>
       )}
+
+      {/* Pagination also renders when the page has no rows, so a page that no
+          longer exists is still recoverable. */}
+      {rows.length === 0 && total > 0 ? (
+        <Pagination
+          page={page}
+          pageSize={20}
+          total={total}
+          basePath="/admin/inventory"
+          params={{
+            search,
+            scope: scope === "all" ? undefined : scope,
+            category,
+            supplier,
+            sort: sort === "name" ? undefined : sort,
+          }}
+        />
+      ) : null}
     </div>
   );
 }

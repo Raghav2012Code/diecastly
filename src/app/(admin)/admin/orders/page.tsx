@@ -6,26 +6,22 @@ import { Pagination } from "@/components/ui/pagination";
 import { OrderFilters } from "@/components/admin/order-filters";
 import { OrdersTable } from "@/components/admin/orders-table";
 import { listOrders } from "@/lib/orders/data";
-import type { DerivedPaymentStatus, OrderChannel, OrderStatus } from "@/lib/types/database.types";
+import { one, orderChannelParam, orderStatusParam, pageNumber, paymentStatusParam } from "@/lib/list-params";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Orders" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-function one(value: string | string[] | undefined): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
 export default async function OrdersPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const search = one(params.search);
-  const status = (one(params.status) ?? "all") as OrderStatus | "all";
-  const payment = (one(params.payment) ?? "all") as DerivedPaymentStatus | "all";
-  const channel = (one(params.channel) ?? "all") as OrderChannel | "all";
+  const status = orderStatusParam(params.status);
+  const payment = paymentStatusParam(params.payment);
+  const channel = orderChannelParam(params.channel);
   const from = one(params.from);
   const to = one(params.to);
-  const page = Number.parseInt(one(params.page) ?? "1", 10) || 1;
+  const page = pageNumber(params.page);
 
   const list = await listOrders({
     search,
