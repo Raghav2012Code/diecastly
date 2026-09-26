@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { OrderFilters } from "@/components/admin/order-filters";
 import { OrdersTable } from "@/components/admin/orders-table";
+import { FulfilmentActions } from "@/app/(admin)/admin/orders/fulfilment-actions";
 import { listOrders } from "@/lib/orders/data";
 import { one, orderChannelParam, orderStatusParam, pageNumber, paymentStatusParam } from "@/lib/list-params";
 
@@ -84,7 +85,17 @@ export default async function OrdersPage({ searchParams }: { searchParams: Searc
         />
       ) : (
         <>
-          <OrdersTable rows={rows} />
+          <OrdersTable
+        rows={rows}
+        renderActions={(row) => (
+          <FulfilmentActions
+            orderId={row.order_id}
+            orderNumber={row.order_number}
+            status={row.status}
+            channel={row.channel}
+          />
+        )}
+      />
 
           <Pagination
             page={page}

@@ -14,7 +14,18 @@ import { formatINR } from "@/lib/validation/money";
 import type { VOrderSummaryRow } from "@/lib/types/database.types";
 
 /** The orders table. Shared by the orders page and the preview harness. */
-export function OrdersTable({ rows }: { rows: VOrderSummaryRow[] }) {
+export function OrdersTable({
+  rows,
+  renderActions,
+}: {
+  rows: VOrderSummaryRow[];
+  /**
+   * Optional per-row controls. Supplied by the orders page, omitted by the
+   * preview harness, which renders sample rows with no real ids behind them —
+   * so a hard-coded column would put live-looking buttons over fake data.
+   */
+  renderActions?: (row: VOrderSummaryRow) => React.ReactNode;
+}) {
   return (
     <Card className="overflow-hidden">
       <Table>
@@ -27,6 +38,7 @@ export function OrdersTable({ rows }: { rows: VOrderSummaryRow[] }) {
             <TableHead className="text-right">Total</TableHead>
             <TableHead>Payment</TableHead>
             <TableHead>Fulfilment</TableHead>
+            {renderActions ? <TableHead className="text-right">Actions</TableHead> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -61,6 +73,9 @@ export function OrdersTable({ rows }: { rows: VOrderSummaryRow[] }) {
                   {orderStatusLabel[row.status]}
                 </Badge>
               </TableCell>
+              {renderActions ? (
+                <TableCell className="text-right">{renderActions(row)}</TableCell>
+              ) : null}
             </TableRow>
           ))}
         </TableBody>
