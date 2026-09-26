@@ -101,8 +101,8 @@ export function OrderDetailView({
         {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="space-y-5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="min-w-0 space-y-5">
           <Card className="overflow-hidden">
             <div className="border-b border-border px-5 py-3">
               <h2 className="font-display text-lg font-bold tracking-tight">Items</h2>

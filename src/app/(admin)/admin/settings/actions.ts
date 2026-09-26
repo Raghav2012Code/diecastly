@@ -30,7 +30,7 @@ export async function saveSettingsAction(input: unknown): Promise<ActionResult<n
     .update({
       business_name: parsed.data.businessName,
       business_phone: parsed.data.businessPhone,
-      business_email: parsed.data.businessEmail ?? null,
+      business_email: parsed.data.businessEmail,
       upi_id: parsed.data.upiId,
       upi_qr_path: parsed.data.upiQrPath,
       order_prefix: parsed.data.orderPrefix,

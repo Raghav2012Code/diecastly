@@ -31,28 +31,64 @@ const trimmed = (max: number, message?: string) =>
     .min(1, message ?? "This cannot be empty.")
     .max(max);
 
-/** An optional field that stores as null rather than as "". */
+/**
+ * An optional field that always yields `string | null`.
+ *
+ * Deliberately NOT `.optional().transform(...)`: that short-circuits on an absent
+ * key, so the transform never runs and the result is `undefined` rather than
+ * `null`. `undefined` is dropped by JSON.stringify, so the column would be
+ * silently LEFT UNCHANGED instead of cleared — the admin clears the UPI field,
+ * hits save, sees success, and the old value is still there. A total contract
+ * removes that whole class of silent no-op.
+ */
 const optionalText = (max: number) =>
   z
-    .string()
-    .trim()
-    .max(max)
-    .optional()
-    .transform((value) => (value ? value : null));
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value, ctx) => {
+      if (typeof value !== "string") return null;
+      const trimmed = value.trim();
+      if (trimmed.length === 0) return null;
+      if (trimmed.length > max) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.too_big,
+          type: "string",
+          maximum: max,
+          inclusive: true,
+          message: `Keep this under ${max} characters.`,
+        });
+        return z.NEVER;
+      }
+      return trimmed;
+    });
 
 export const settingsInputSchema = z.object({
   businessName: trimmed(120, "Enter the business name."),
   businessPhone: optionalText(40),
   businessEmail: z
-    .string()
-    .trim()
-    .max(200)
-    .optional()
-    .transform((value) => (value ? value : undefined))
-    .refine(
-      (value) => value === undefined || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
-      "Enter a valid email address.",
-    ),
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value, ctx) => {
+      if (typeof value !== "string") return null;
+      const trimmed = value.trim();
+      if (trimmed.length === 0) return null;
+      if (trimmed.length > 200) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.too_big,
+          type: "string",
+          maximum: 200,
+          inclusive: true,
+          message: "Keep this under 200 characters.",
+        });
+        return z.NEVER;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Enter a valid email address.",
+        });
+        return z.NEVER;
+      }
+      return trimmed;
+    }),
   upiId: optionalText(120),
   upiQrPath: optionalText(400),
   orderPrefix: trimmed(12, "Enter an order prefix, e.g. DC.").transform((v) => v.toUpperCase()),

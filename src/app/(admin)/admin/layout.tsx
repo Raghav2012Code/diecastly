@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ToastProvider } from "@/components/ui/toast";
+import { getLowStock } from "@/lib/reports/data";
 import { AdminNav } from "./nav";
 import { SignOutButton } from "./sign-out-button";
 
@@ -18,6 +19,15 @@ export default async function AdminLayout({
 
   const initial = (user.email ?? "?").slice(0, 1).toUpperCase();
 
+  // Active products only, at or below their threshold and not already sold out.
+  // Counted here rather than in the nav because the nav is a client component and
+  // this needs the reporting view. A failure is not fatal: the admin simply gets
+  // no badge, which is the right degradation for an advisory count.
+  const lowStock = await getLowStock(200);
+  const lowStockCount = lowStock.ok
+    ? lowStock.data.filter((row) => row.is_low_stock && !row.is_out_of_stock).length
+    : 0;
+
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-60 shrink-0 flex-col bg-petrol print:hidden md:flex">
@@ -33,7 +43,7 @@ export default async function AdminLayout({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-          <AdminNav />
+          <AdminNav lowStockCount={lowStockCount} />
         </div>
         <p className="px-5 py-4 text-[11px] text-petrol-foreground/45">
           Stock moves only through the ledger.
@@ -59,6 +69,13 @@ export default async function AdminLayout({
           </div>
           <SignOutButton />
         </header>
+        {/* Below md the sidebar is display:none, which left the admin with no way
+            to move between sections. Horizontally scrollable so all nine items
+            stay reachable without a menu that has to be opened first. */}
+        <div className="border-b border-border bg-petrol px-3 py-2 print:hidden md:hidden">
+          <AdminNav orientation="bar" lowStockCount={lowStockCount} />
+        </div>
+
         <main className="min-w-0 flex-1 px-4 py-6 print:p-0 md:px-6">
           <ToastProvider>{children}</ToastProvider>
         </main>

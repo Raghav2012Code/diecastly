@@ -432,8 +432,8 @@ export function PosScreen({
         </p>
       </header>
 
-      <div className="no-print grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
-        <section className="flex min-h-0 flex-col" aria-label="Product search">
+      <div className="no-print grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
+        <section className="flex min-h-0 min-w-0 flex-col" aria-label="Product search">
           <div className="relative">
             <ScanLine
               aria-hidden

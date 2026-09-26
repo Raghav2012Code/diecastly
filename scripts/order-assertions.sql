@@ -689,6 +689,237 @@ begin
 end
 $$;
 
+-- Lifecycle edge cases. Appended to the order suite.
+--
+-- The happy path is covered above; these are the transitions that must be
+-- REFUSED, and the pair that must be idempotent. Each refusal is paired with a
+-- control that shows the operation works when it is legal, because an assertion
+-- that only proves something is rejected passes just as well against a function
+-- that rejects everything.
+
+insert into auth.users (id, email)
+values ('00000000-0000-0000-0000-0000000000c4', 'edge@test.local')
+on conflict (id) do nothing;
+insert into public.admin_users (id, email)
+values ('00000000-0000-0000-0000-0000000000c4', 'edge@test.local')
+on conflict (id) do nothing;
+
+insert into public.products (id, name, slug, sku, selling_price, purchase_cost, status) values
+  ('24000000-0000-0000-0000-000000000001', 'Edge Item', 'edge-item', 'EG-1', 100, 40, 'active')
+on conflict (id) do nothing;
+
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000000c4","role":"authenticated"}';
+select public.set_initial_stock('24000000-0000-0000-0000-000000000001', 20, 40);
+set request.jwt.claims = '{}';
+
+-- ---------------------------------------------------------------------------
+-- 8. The transition table refuses everything that is not the next step.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_order uuid;
+  v_status text;
+  v_rejected text := '';
+begin
+  v_order := public.place_online_order(
+    p_items => '[{"productId":"24000000-0000-0000-0000-000000000001","quantity":2}]'::jsonb,
+    p_customer => '{"name":"Edge Buyer","phone":"9900000090"}'::jsonb,
+    p_payment_method => 'upi',
+    p_shipping_address => '{"addressLine1":"1 St","city":"Pune","state":"MH","postalCode":"411001"}'::jsonb,
+    p_notes => null,
+    p_idempotency_key => 'asrt-edge-order'
+  ) ->> 'order_id';
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c4","role":"authenticated"}', false);
+
+  -- pending -> shipped skips two steps and must be refused.
+  begin
+    perform public.update_order_status(v_order, 'shipped', null, null, null);
+  exception when others then
+    v_rejected := sqlerrm;
+  end;
+  if v_rejected <> 'invalid_transition' then
+    raise exception 'FAIL skipping steps must raise invalid_transition, got %', coalesce(nullif(v_rejected,''),'no error');
+  end if;
+
+  -- Control: the legal single step is accepted.
+  perform public.update_order_status(v_order, 'confirmed', null, null, null);
+  select status into v_status from public.orders where id = v_order;
+  if v_status <> 'confirmed' then
+    raise exception 'FAIL control: pending -> confirmed must be accepted, status is %', v_status;
+  end if;
+
+  -- Going backwards is not a transition either.
+  begin
+    perform public.update_order_status(v_order, 'pending', null, null, null);
+  exception when others then
+    v_rejected := sqlerrm;
+  end;
+  if v_rejected <> 'invalid_transition' then
+    raise exception 'FAIL going backwards must raise invalid_transition, got %', coalesce(nullif(v_rejected,''),'no error');
+  end if;
+
+  -- And the same target twice is refused the second time, because the order has
+  -- already moved on.
+  begin
+    perform public.update_order_status(v_order, 'confirmed', null, null, null);
+  exception when others then
+    v_rejected := sqlerrm;
+  end;
+  if v_rejected <> 'invalid_transition' then
+    raise exception 'FAIL repeating a completed step must be refused, got %', coalesce(nullif(v_rejected,''),'no error');
+  end if;
+
+  raise notice 'PASS only the single next step is accepted';
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 9. cancelled and returned are refused by update_order_status and must go
+--    through cancel_order instead.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_order uuid;
+  v_code text := '';
+begin
+  v_order := public.place_online_order(
+    p_items => '[{"productId":"24000000-0000-0000-0000-000000000001","quantity":1}]'::jsonb,
+    p_customer => '{"name":"Route Buyer","phone":"9900000091"}'::jsonb,
+    p_payment_method => 'upi',
+    p_shipping_address => '{"addressLine1":"1 St","city":"Pune","state":"MH","postalCode":"411001"}'::jsonb,
+    p_notes => null,
+    p_idempotency_key => 'asrt-route-order'
+  ) ->> 'order_id';
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c4","role":"authenticated"}', false);
+
+  foreach v_code in array array['cancelled', 'returned'] loop
+    declare
+      v_err text := '';
+    begin
+      begin
+        perform public.update_order_status(v_order, v_code::public.order_status, null, null, null);
+      exception when others then
+        v_err := sqlerrm;
+      end;
+      if v_err <> 'use_cancel_order' then
+        raise exception 'FAIL % must raise use_cancel_order, got %', v_code, coalesce(nullif(v_err,''),'no error');
+      end if;
+    end;
+  end loop;
+
+  raise notice 'PASS cancelled and returned are routed to cancel_order';
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 10. A shipped order can no longer be cancelled.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_order uuid;
+  v_stock integer;
+  v_err text := '';
+  v_rejected boolean := false;
+begin
+  v_order := public.place_online_order(
+    p_items => '[{"productId":"24000000-0000-0000-0000-000000000001","quantity":2}]'::jsonb,
+    p_customer => '{"name":"Shipped Buyer","phone":"9900000092"}'::jsonb,
+    p_payment_method => 'upi',
+    p_shipping_address => '{"addressLine1":"1 St","city":"Pune","state":"MH","postalCode":"411001"}'::jsonb,
+    p_notes => null,
+    p_idempotency_key => 'asrt-shipped-order'
+  ) ->> 'order_id';
+
+  -- Walk it up to shipped: confirmed -> packed -> shipped.
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c4","role":"authenticated"}', false);
+  perform public.update_order_status(v_order, 'confirmed', null, null, null);
+  perform public.update_order_status(v_order, 'packed', null, null, null);
+  perform public.update_order_status(v_order, 'shipped', null, 'Delhivery', 'TRK-1');
+
+  select quantity into v_stock from public.inventory_stock
+   where product_id = '24000000-0000-0000-0000-000000000001';
+
+  begin
+    perform public.cancel_order(v_order, 'too late', true, true, null);
+  exception when others then
+    v_rejected := sqlerrm = 'invalid_transition';
+    v_err := sqlerrm;
+  end;
+
+  if not v_rejected then
+    raise exception 'FAIL a shipped order must not be cancellable, got %', coalesce(nullif(v_err,''),'no error');
+  end if;
+
+  -- Nothing may have moved: the refusal happens before the restock.
+  if (select quantity from public.inventory_stock
+       where product_id = '24000000-0000-0000-0000-000000000001') <> v_stock then
+    raise exception 'FAIL the refused cancel moved stock';
+  end if;
+
+  raise notice 'PASS a shipped order cannot be cancelled and nothing moved';
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 11. Cancelling an in-person sale outside the reversal window is refused.
+--
+--     The window is compared against the order's own timestamp, so this needs
+--     the order to be old. Rewriting created_at is a direct table write, which is
+--     fine here: this is a test arranging a fixture, not the application moving
+--     an order.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_order uuid;
+  v_stock integer;
+  v_err text := '';
+  v_rejected boolean := false;
+begin
+
+  v_order := public.record_in_person_sale(
+    p_items => '[{"productId":"24000000-0000-0000-0000-000000000001","quantity":1,"unitPrice":100}]'::jsonb,
+    p_payment_method => 'cash',
+    p_payments => null,
+    p_customer => null,
+    p_notes => 'old sale',
+    p_idempotency_key => 'asrt-old-sale'
+  ) ->> 'order_id';
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c4","role":"authenticated"}', false);
+
+  -- Age it well past the 24-hour default window.
+  update public.orders set created_at = now() - interval '10 days' where id = v_order;
+
+  select quantity into v_stock from public.inventory_stock
+   where product_id = '24000000-0000-0000-0000-000000000001';
+
+  begin
+    perform public.cancel_order(v_order, 'too late', true, true, null);
+  exception when others then
+    v_rejected := sqlerrm = 'outside_reversal_window';
+    v_err := sqlerrm;
+  end;
+
+  if not v_rejected then
+    raise exception 'FAIL a 10-day-old in-person sale must raise outside_reversal_window, got %',
+      coalesce(nullif(v_err,''),'no error');
+  end if;
+
+  if (select quantity from public.inventory_stock
+       where product_id = '24000000-0000-0000-0000-000000000001') <> v_stock then
+    raise exception 'FAIL the refused reversal moved stock';
+  end if;
+
+  -- CONTROL: the same sale inside the window IS reversible.
+  update public.orders set created_at = now() - interval '1 hour' where id = v_order;
+  perform public.cancel_order(v_order, 'customer changed mind', true, false, null);
+  if (select status from public.orders where id = v_order) <> 'cancelled' then
+    raise exception 'FAIL control: a sale inside the window must be reversible';
+  end if;
+
+  raise notice 'PASS the reversal window is enforced server-side, in both directions';
+end
+$$;
+
 -- RAISE NOTICE is invisible in single-user mode; the success signal is a SELECT
 -- because single-user echoes result rows to stdout.
 select 'ALL ASSERTIONS PASSED' as result;

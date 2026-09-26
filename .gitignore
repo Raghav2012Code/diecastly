@@ -34,3 +34,6 @@ yarn-error.log*
 # (keep supabase/config.toml and migrations tracked; ignore only transient local data)
 supabase/.temp
 supabase/.branches
+
+# browser QA artefacts (playwright console logs, traces)
+/.playwright-mcp/
