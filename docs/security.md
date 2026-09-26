@@ -50,8 +50,10 @@ Every RPC must:
   - **Admin RPCs** → `authenticated` only, and each begins by asserting `is_admin()` (definer bypasses RLS, so the assertion is the guard).
   - **Storefront RPCs** (`place_online_order`, `get_order_by_access`) → `anon, authenticated`.
 - Validate all inputs internally; never trust client-supplied totals, prices, or ids.
-- Raise a recognisable code for every expected failure so the UI can map it to a friendly message. **Reality today:** all of them raise `P0001` and are distinguished by the exception *message*, which the error-translation module matches on. The codes are `insufficient_stock`, `invalid_transition`, `over_payment`, `over_refund`, `nothing_to_refund`, `product_inactive`, `product_not_found`, `order_not_found`, `outside_reversal_window`, `use_cancel_order`, `idempotency_conflict`, `invalid_unit_price`, `invalid_discount`, `invalid_quantity`, `invalid_delta`, `invalid_reason`, `invalid_payment`, `invalid_payment_method`, `empty_items`, `customer_required`, `customer_name_phone_required`, `shipping_address_required`, `cod_disabled`, `not_authorized`. Two machine-readable classes are also in use: `22023` for invalid parameters and `42501` for authorization.
-- **A unit test enumerates that list literally and fails if any code has no friendly message**, so a newly raised code cannot silently reach the interface as a generic failure. `already_cancelled` is not a code: a repeat cancellation returns the existing result idempotently rather than raising. Converting these to distinct SQLSTATEs is a known follow-up and deliberately not done — message matching already works, and the conversion would touch every function.
+- **Every expected failure raises a recognisable code, and the message carries the specific code.** All business-rule failures raise `P0001`, invalid parameters raise `22023`, and authorization failures raise `42501`; within those, the *message* is the specific machine-readable token (`'insufficient_stock'`, `'over_refund'`, `'over_payment'`, …). The interface's error-translation module maps every one of those tokens to a friendly message.
+- **Distinct SQLSTATEs per failure were considered and rejected (D49).** The intent here previously read "raise distinct SQLSTATEs". Measured on PostgreSQL 18 rather than assumed: custom five-character codes *are* accepted and *are* catchable by name — but a custom code is **no longer caught by `exception when sqlstate 'P0001'`, so any generic handler silently stops matching, and 7 existing invariant assertions pin the expected SQLSTATE. Since the user-visible defect was already closed by mapping all 24 tokens to friendly messages, converting the codes would be a public-contract change with no remaining user benefit.
+- `already_cancelled` is deliberately **not** a code: a repeat cancellation returns the existing result idempotently rather than raising.
+- **A unit test enumerates the raised tokens as a literal list and fails if any is unmapped**, so a newly raised code cannot reach the interface as a generic failure. Adding a code without a message breaks the build.
 - Return only the data the caller is entitled to.
 
 The Supabase `service_role` key bypasses RLS and is used **server-side only**; it is never exposed to the browser.
@@ -71,6 +73,9 @@ The Supabase `service_role` key bypasses RLS and is used **server-side only**; i
 | `set_initial_stock` | admin | First `initial` movement for a new product; idempotent — a retry returns the existing result and cannot double stock. Optionally updates `products.purchase_cost`, the one place a stock RPC writes product metadata; the current caller never passes a cost, so that branch is dormant |
 | `get_order_by_access` | anon | Read one order only when number + token match |
 | `update_order_notes` | admin | Edit non-financial notes (kept out of direct table writes) |
+| `set_primary_image` | admin | Make one image the product's primary; exactly one primary afterwards (D48) |
+| `reorder_product_images` | admin | Set a product's image display order in one transaction; rejects a partial or foreign set (D47) |
+| `delete_product_image` | admin | Delete an image and promote a successor in the same transaction; returns the storage path (D47, D48) |
 
 Each RPC invocation is one implicit transaction; any `RAISE` rolls back everything. The client never orchestrates multi-step financial operations.
 

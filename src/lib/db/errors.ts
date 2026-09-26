@@ -66,6 +66,9 @@ const MESSAGES: Array<[string, string]> = [
   ["customer_name_phone_required", "A customer name and phone number are required."],
   ["shipping_address_required", "A shipping address is required."],
   ["cod_disabled", "Cash on delivery is switched off. Offer another payment method."],
+  // Product images
+  ["image_not_found", "That image no longer exists."],
+  ["image_set_mismatch", "The image list changed. Reload and try again."],
   // Authorization
   ["not_authorized", "You are not authorized to do that."],
 ];

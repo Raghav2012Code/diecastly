@@ -357,3 +357,66 @@ export async function updateOrderNotes(
   if (error) return fail(error);
   return ok(data as OrderMutationResult);
 }
+
+// ---------------------------------------------------------------------------
+// Product images
+//
+// These three are RPCs rather than direct table writes for ATOMICITY, not
+// encapsulation - see D47. Each was previously a sequence of independent client
+// statements, and each could be interrupted into a broken state:
+//
+//   * set-primary cleared every primary then set the new one. The partial unique
+//     index forbids the reverse order, so a failure between them left the
+//     product with no primary at all.
+//   * reorder issued one UPDATE per image, so a mid-loop failure left the order
+//     half-applied while reporting failure.
+//   * delete promoted the successor BEFORE deleting the old primary, which the
+//     unique index forbids outright - so deleting a primary image did nothing.
+//
+// A plpgsql function body is one transaction, so each is now all-or-nothing.
+// ---------------------------------------------------------------------------
+
+/** Makes imageId the product's primary image. Exactly one primary afterwards. */
+export async function setPrimaryImage(
+  client: Client,
+  args: { productId: string; imageId: string },
+): Promise<Result<null>> {
+  const { error } = await client.rpc("set_primary_image", {
+    p_product_id: args.productId,
+    p_image_id: args.imageId,
+  });
+  if (error) return fail(error);
+  return ok(null);
+}
+
+/**
+ * Sets the display order of a product's images. The product is derived from the
+ * ids, and imageIds must be exactly that product's images - a partial or foreign
+ * set is rejected rather than silently dropping images out of the ordering.
+ */
+export async function reorderProductImages(
+  client: Client,
+  args: { imageIds: string[] },
+): Promise<Result<null>> {
+  const { error } = await client.rpc("reorder_product_images", {
+    p_image_ids: args.imageIds,
+  });
+  if (error) return fail(error);
+  return ok(null);
+}
+
+/**
+ * Deletes an image, promoting a successor in the same transaction if it was the
+ * primary. Returns the storage path so the caller can remove the file; storage
+ * cleanup cannot join the database transaction.
+ */
+export async function deleteProductImage(
+  client: Client,
+  args: { imageId: string },
+): Promise<Result<string | null>> {
+  const { data, error } = await client.rpc("delete_product_image", {
+    p_image_id: args.imageId,
+  });
+  if (error) return fail(error);
+  return ok((data as string | null) ?? null);
+}

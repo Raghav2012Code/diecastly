@@ -20,7 +20,10 @@
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
     "db:push": "supabase db push",
-    "db:diff": "supabase db diff"
+    "db:diff": "supabase db diff",
+    "test:db:catalog": "node scripts/single-user.mjs --assertions=scripts/catalog-assertions.sql",
+    "test:db:fallback": "npm run test:db:single && npm run test:db:catalog",
+    "verify:fallback": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:db:fallback"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

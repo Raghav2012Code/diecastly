@@ -30,8 +30,7 @@ insert into public.products (id, name, slug, sku, selling_price, purchase_cost, 
 on conflict (id) do nothing;
 
 -- Opening stock needs an admin session.
-select set_config('request.jwt.claims',
-  '{"sub":"00000000-0000-0000-0000-0000000000c1","role":"authenticated"}', false);
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000000c1","role":"authenticated"}';
 
 select public.set_initial_stock('21000000-0000-0000-0000-000000000001', 20, 200);
 select public.set_initial_stock('21000000-0000-0000-0000-000000000002', 20, 100);
@@ -40,7 +39,7 @@ select public.set_initial_stock('21000000-0000-0000-0000-000000000004', 20, 100)
 select public.set_initial_stock('21000000-0000-0000-0000-000000000005', 20, 150);
 
 -- Drop back to anonymous for the storefront assertions.
-select set_config('request.jwt.claims', '{}', false);
+set request.jwt.claims = '{}';
 
 -- ---------------------------------------------------------------------------
 -- 1. An anonymous caller cannot set the price of an online order.
@@ -140,8 +139,7 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 3. A sale with no payment records no payment and derives unpaid.
 -- ---------------------------------------------------------------------------
-select set_config('request.jwt.claims',
-  '{"sub":"00000000-0000-0000-0000-0000000000c1","role":"authenticated"}', false);
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000000c1","role":"authenticated"}';
 
 do $$
 declare

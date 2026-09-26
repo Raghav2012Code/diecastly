@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import * as rpc from "@/lib/db/rpc";
 import { fail, ok, type Result } from "@/lib/db/errors";
 import {
   slugify,
@@ -478,54 +479,31 @@ export async function updateSupplier(id: string, input: SupplierInput): Promise<
 
 // ---------------------------------------------------------------------------
 // Product images
+//
+// All three mutations delegate to security-definer RPCs so each is one
+// transaction. They are RPCs for ATOMICITY, not encapsulation: product_images is
+// metadata, and D4 otherwise keeps metadata on the RLS lane. See D47.
+//
+// Each was broken as a sequence of independent client statements:
+//
+//   * set-primary cleared every primary then set the new one. The partial unique
+//     index forbids the reverse order, so a failure between the two left the
+//     product with no primary at all.
+//   * reorder issued one UPDATE per image, so a mid-loop failure left the order
+//     half-applied while the action reported failure.
+//   * delete promoted the successor BEFORE deleting the old primary, which the
+//     unique index forbids outright. Verified against PostgreSQL 18.6: the
+//     promotion raised a unique violation, the function returned an error, and
+//     the delete never ran - so deleting a primary image did nothing at all.
 // ---------------------------------------------------------------------------
 
-export async function clearPrimaryImage(productId: string): Promise<Result<null>> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("product_images")
-    .update({ is_primary: false })
-    .eq("product_id", productId)
-    .eq("is_primary", true);
-  if (error) return fail(error);
-  return ok(null);
-}
-
 /**
- * Makes `imageId` the product's primary image.
- *
- * The partial unique index permits at most one primary per product, so the new
- * one cannot be set before the old one is cleared - the order is forced, and
- * there is a window between the two statements in which the product has no
- * primary at all. If the second write fails, the previous primary is restored
- * so the product is never left in that state. Closing the window entirely needs
- * a single statement or an RPC; neither is available on the metadata lane, and
- * shipping an untested database function for it would be worse than a
- * compensating write.
+ * Makes `imageId` the product's primary image. The database guarantees exactly
+ * one primary afterwards, so there is no window with none.
  */
 export async function setPrimaryImage(productId: string, imageId: string): Promise<Result<null>> {
   const supabase = await createClient();
-
-  const { data: current, error: readError } = await supabase
-    .from("product_images")
-    .select("id")
-    .eq("product_id", productId)
-    .eq("is_primary", true)
-    .maybeSingle();
-  if (readError) return fail(readError);
-  const previousId = (current as { id: string } | null)?.id ?? null;
-
-  const cleared = await clearPrimaryImage(productId);
-  if (!cleared.ok) return cleared;
-
-  const { error } = await supabase.from("product_images").update({ is_primary: true }).eq("id", imageId);
-  if (!error) return ok(null);
-
-  // Put the product back the way it was rather than leaving it with no primary.
-  if (previousId) {
-    await supabase.from("product_images").update({ is_primary: true }).eq("id", previousId);
-  }
-  return fail(error);
+  return rpc.setPrimaryImage(supabase, { productId, imageId });
 }
 
 export async function addProductImage(input: {
@@ -553,6 +531,12 @@ export async function addProductImage(input: {
       storage_path: input.storagePath,
       alt_text: input.altText,
       sort_order: nextOrder,
+      // Never ask for the primary flag on insert. A BEFORE INSERT trigger makes a
+      // product's FIRST image its primary automatically, so a product can never
+      // end up holding an image with no primary. Claiming the flag here instead
+      // would collide with the partial unique index whenever the product already
+      // had a primary. Changing which image is primary goes through
+      // setPrimaryImage, which is one transaction.
       is_primary: false,
     })
     .select("*")
@@ -568,80 +552,54 @@ export async function addProductImage(input: {
   return ok(row);
 }
 
-export async function updateImageAlt(imageId: string, altText: string | null): Promise<Result<null>> {
-  const supabase = await createClient();
-  const { error } = await supabase.from("product_images").update({ alt_text: altText }).eq("id", imageId);
-  if (error) return fail(error);
-  return ok(null);
-}
-
-export async function reorderProductImages(
-  images: { id: string; sortOrder: number }[],
+export async function updateImageAlt(
+  imageId: string,
+  altText: string | null,
 ): Promise<Result<null>> {
   const supabase = await createClient();
-  for (const image of images) {
-    const { error } = await supabase
-      .from("product_images")
-      .update({ sort_order: image.sortOrder })
-      .eq("id", image.id);
-    if (error) return fail(error);
-  }
+  const { error } = await supabase
+    .from("product_images")
+    .update({ alt_text: altText })
+    .eq("id", imageId);
+  if (error) return fail(error);
   return ok(null);
 }
 
 /**
- * Deletes an image and, if it was the primary, promotes a replacement in the
- * same operation.
+ * Sets the display order of a product's images.
  *
- * The database constraint guarantees *at most* one primary per product but
- * nothing guaranteed *at least* one, and deletion did not consider the flag. So
- * deleting the primary image from a product with three images left two images
- * and no primary: the storefront and every admin thumbnail fell back to the
- * placeholder, and uploading a replacement did not fix it, because the
- * automatic promotion only ever fired for a product with zero images.
+ * The ids must be exactly that product's images, in the wanted order. A partial
+ * or foreign set is rejected and nothing is written, rather than silently
+ * dropping the omitted images out of the ordering. The product is derived from
+ * the ids, so the action payload is unchanged.
  *
- * The successor is the next image by display order, falling back to the first
- * remaining one, so the choice matches what the admin sees in the list.
+ * `sortOrder` is not sent: the database assigns position from the array order,
+ * so a caller cannot produce two images sharing a sort_order.
+ */
+export async function reorderProductImages(
+  images: { id: string; sortOrder: number }[],
+): Promise<Result<null>> {
+  if (images.length === 0) return ok(null);
+  const supabase = await createClient();
+  return rpc.reorderProductImages(supabase, { imageIds: images.map((image) => image.id) });
+}
+
+/**
+ * Deletes an image, promoting a successor in the same transaction if it was the
+ * primary - so a product with images always has a primary image.
+ *
+ * The storage object is removed afterwards rather than inside the transaction: a
+ * failure there leaves an orphaned file, which is recoverable, whereas the
+ * reverse order would leave a row pointing at a file that no longer exists.
  */
 export async function deleteProductImage(imageId: string): Promise<Result<null>> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("product_images")
-    .select("*")
-    .eq("id", imageId)
-    .maybeSingle();
-  if (error) return fail(error);
-  if (!data) return ok(null);
 
-  const row = data as ProductImageRow;
+  const deleted = await rpc.deleteProductImage(supabase, { imageId });
+  if (!deleted.ok) return deleted;
 
-  if (row.is_primary) {
-    const { data: successors, error: successorError } = await supabase
-      .from("product_images")
-      .select("id")
-      .eq("product_id", row.product_id)
-      .neq("id", imageId)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true })
-      .limit(1);
-    if (successorError) return fail(successorError);
-
-    const successor = (successors as { id: string }[] | null)?.[0];
-    if (successor) {
-      const { error: promoteError } = await supabase
-        .from("product_images")
-        .update({ is_primary: true })
-        .eq("id", successor.id);
-      if (promoteError) return fail(promoteError);
-    }
+  if (deleted.data) {
+    await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([deleted.data]);
   }
-
-  const { error: deleteError } = await supabase.from("product_images").delete().eq("id", imageId);
-  if (deleteError) return fail(deleteError);
-
-  // The row is gone first: a storage failure leaves an orphaned file, which is
-  // recoverable, whereas failing before the delete would leave the list
-  // pointing at a file that is already gone.
-  await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([row.storage_path]);
   return ok(null);
 }

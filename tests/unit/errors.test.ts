@@ -17,6 +17,8 @@ const RAISED_CODES = [
   "customer_required",
   "empty_items",
   "idempotency_conflict",
+  "image_not_found",
+  "image_set_mismatch",
   "insufficient_stock",
   "invalid_delta",
   "invalid_discount",
