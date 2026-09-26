@@ -9,6 +9,7 @@ import type {
   VOrderSummaryRow,
 } from "@/lib/types/database.types";
 import { businessSummary, type ReceiptBusiness } from "@/lib/orders/receipt";
+import { lineProfit, lineTotal } from "@/lib/validation/money";
 
 /**
  * Sample data for the frontend preview harness (`/preview`). Not used by the
@@ -70,8 +71,8 @@ function item(
     unit_price: unitPrice,
     unit_cost: unitCost,
     line_discount: discount,
-    line_total: Math.round((unitPrice * quantity - discount) * 100) / 100,
-    line_profit: Math.round(((unitPrice - unitCost) * quantity - discount) * 100) / 100,
+    line_total: lineTotal(unitPrice, quantity, discount),
+    line_profit: lineProfit(unitPrice, unitCost, quantity, discount),
     created_at: createdAt,
   };
 }

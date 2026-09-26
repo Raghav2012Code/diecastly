@@ -1,7 +1,7 @@
 import type * as React from "react";
 import { Receipt } from "lucide-react";
 import type { ReceiptView } from "@/lib/orders/receipt";
-import { formatINR } from "@/lib/validation/money";
+import { addMoney, formatINR, roundMoney } from "@/lib/validation/money";
 import { formatDateTimeIST } from "@/lib/dates";
 import { orderChannelLabel, paymentMethodLabel } from "@/lib/display";
 import { cn } from "@/lib/utils";
@@ -100,10 +100,15 @@ export function ReceiptPaper({
   );
 }
 
+/**
+ * Gross items, then the discount as a visible deduction, then shipping, then
+ * the total. The rows are ordered so the customer's own arithmetic closes:
+ * itemsGross - discountTotal + shippingFee === total.
+ */
 export function ReceiptTotals({ receipt }: { receipt: ReceiptView }) {
   return (
     <div className="space-y-1">
-      <ReceiptMoneyRow label="Subtotal" value={receipt.subtotal} />
+      <ReceiptMoneyRow label="Subtotal" value={receipt.itemsGross} />
       {receipt.discountTotal > 0 ? (
         <ReceiptMoneyRow label="Discount" value={receipt.discountTotal} muted />
       ) : null}
@@ -115,8 +120,8 @@ export function ReceiptTotals({ receipt }: { receipt: ReceiptView }) {
 
 /** The printed, read-only receipt. */
 export function OrderReceipt({ receipt, className }: { receipt: ReceiptView; className?: string }) {
-  const paid = receipt.payments.reduce((total, payment) => total + payment.amount, 0);
-  const balance = Math.max(0, Math.round((receipt.total - paid) * 100) / 100);
+  const paid = addMoney(...receipt.payments.map((payment) => payment.amount));
+  const balance = Math.max(0, roundMoney(receipt.total - paid));
 
   return (
     <ReceiptPaper receipt={receipt} className={className}>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReceiptView, businessSummary, receiptFromOrder } from "@/lib/orders/receipt";
+import { lineTotal, multiplyMoney, roundMoney } from "@/lib/validation/money";
 import type { OrderItemRow, OrderReceipt } from "@/lib/types/database.types";
 
 function item(overrides: Partial<OrderItemRow>): OrderItemRow {
@@ -57,6 +58,69 @@ describe("buildReceiptView", () => {
 
     expect(view.subtotal).toBe(0);
     expect(view.total).toBe(0);
+  });
+
+  it("exposes a gross items figure that reconciles with the total", () => {
+    // Guards the defect where `subtotal` is net by definition, so printing it
+    // under the label "Subtotal" above a Discount row made a 500-rupee item
+    // with 100 off read as "400 - 100, total 400". The rows must close:
+    // gross - discount + shipping === total.
+    const view = buildReceiptView({
+      orderNumber: null,
+      channel: "in_person",
+      createdAt: null,
+      customerName: null,
+      paymentMethod: "cash",
+      lines: [{ name: "A", sku: null, quantity: 1, unitPrice: 500, lineDiscount: 100, lineTotal: 400 }],
+      shippingFee: 0,
+      payments: [],
+      business: { name: "Diecastly", phone: null, email: null },
+    });
+
+    expect(view.itemsGross).toBe(500);
+    expect(view.discountTotal).toBe(100);
+    expect(view.total).toBe(400);
+    expect(view.itemsGross - view.discountTotal + view.shippingFee).toBe(view.total);
+  });
+
+  it("reconciles for any set of lines, discounts and shipping", () => {
+    // A property, not an example: the printed arithmetic must close for every
+    // basket, not just the fixture above.
+    for (const shippingFee of [0, 60, 199.99]) {
+      for (const discount of [0, 20, 100, 499.5]) {
+        for (const quantity of [1, 2, 7]) {
+          for (const unitPrice of [99, 250, 1299]) {
+            const view = buildReceiptView({
+              orderNumber: null,
+              channel: "online",
+              createdAt: null,
+              customerName: null,
+              paymentMethod: "upi",
+              lines: [
+                {
+                  name: "A",
+                  sku: null,
+                  quantity,
+                  unitPrice,
+                  lineDiscount: discount,
+                  lineTotal: lineTotal(unitPrice, quantity, discount),
+                },
+              ],
+              shippingFee,
+              payments: [],
+              business: { name: "Diecastly", phone: null, email: null },
+            });
+
+            expect(view.itemsGross).toBe(multiplyMoney(unitPrice, quantity));
+            // Rounded because the claim is that the printed figures reconcile to
+            // the cent; the raw subtraction carries IEEE-754 error. This still
+            // fails if `itemsGross` is the net subtotal: 400 - 100 + 0 !== 400.
+            expect(roundMoney(view.itemsGross - view.discountTotal + view.shippingFee)).toBe(view.total);
+            expect(view.total).toBe(roundMoney(view.subtotal + view.shippingFee));
+          }
+        }
+      }
+    }
   });
 });
 

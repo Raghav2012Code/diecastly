@@ -3,11 +3,21 @@
  * rounded consistently to 2 decimals (the database stores numeric(12,2)).
  */
 
+/**
+ * Rounds to two decimals, with halves going away from zero.
+ *
+ * The nudge compensates for binary representation error so a decimal half
+ * rounds as it was written: 1.005 is stored as 1.00499999999999989 and must
+ * still round up to 1.01. It is applied *away from zero* so the rule is
+ * symmetric — nudging toward positive infinity instead would round -0.005 to
+ * 0 while rounding 0.005 to 0.01, which is not a rounding rule.
+ */
 export function roundMoney(value: number): number {
   if (!Number.isFinite(value)) {
     throw new Error("Invalid money value");
   }
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  const nudged = value + Math.sign(value) * Number.EPSILON;
+  return (Math.sign(nudged) * Math.round(Math.abs(nudged) * 100)) / 100;
 }
 
 export function addMoney(...values: number[]): number {
@@ -45,6 +55,27 @@ export function orderContribution(
   shippingCost: number,
 ): number {
   return roundMoney(productGrossProfitValue + shippingFee - shippingCost);
+}
+
+/** The largest discount a line may carry: its gross value (unit_price * quantity). */
+export function maxLineDiscount(unitPrice: number, quantity: number): number {
+  return multiplyMoney(unitPrice, quantity);
+}
+
+/**
+ * Clamps a line discount to the line's gross value, so a line total can never
+ * go negative. The database enforces the same rule (`invalid_discount`); this
+ * is the client-side half, so the till can never build a line the server will
+ * reject. Apply it whenever unit price, quantity or the discount itself
+ * changes — a discount that was valid at one price is not valid at a lower one.
+ */
+export function clampLineDiscount(
+  unitPrice: number,
+  quantity: number,
+  lineDiscount: number,
+): number {
+  if (!Number.isFinite(lineDiscount) || lineDiscount <= 0) return 0;
+  return Math.min(roundMoney(lineDiscount), maxLineDiscount(unitPrice, quantity));
 }
 
 export function formatINR(amount: number): string {

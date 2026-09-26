@@ -13,7 +13,7 @@ import {
   paymentStatusTone,
 } from "@/lib/display";
 import { formatDateTimeIST } from "@/lib/dates";
-import { formatINR, orderContribution, productGrossProfit } from "@/lib/validation/money";
+import { addMoney, formatINR, orderContribution, productGrossProfit } from "@/lib/validation/money";
 import { cn } from "@/lib/utils";
 import type { OrderDetail, ShippingAddress } from "@/lib/types/database.types";
 
@@ -67,6 +67,7 @@ export function OrderDetailView({
   const { order, financials, items, payments, history } = detail;
   const grossProfit = productGrossProfit(order.subtotal, order.cost_total);
   const contribution = orderContribution(grossProfit, order.shipping_fee, order.shipping_cost);
+  const itemsGross = addMoney(order.subtotal, order.discount_total);
   const address = order.shipping_address;
   const units = items.reduce((total, item) => total + item.quantity, 0);
 
@@ -228,7 +229,9 @@ export function OrderDetailView({
           <Card className="space-y-3 p-5">
             <h2 className="font-display text-lg font-bold tracking-tight">Money</h2>
             <div className="space-y-1">
-              <MoneyRow label="Subtotal" value={order.subtotal} />
+              {/* Gross items, so the rows reconcile: gross - discounts + shipping = total.
+                  `subtotal` is net by definition (docs/database.md). */}
+              <MoneyRow label="Subtotal" value={itemsGross} />
               {order.discount_total > 0 ? (
                 <MoneyRow label="Discounts" value={order.discount_total} muted />
               ) : null}

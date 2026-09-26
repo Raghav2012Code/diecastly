@@ -36,6 +36,13 @@ export type ReceiptView = {
   customerName: string | null;
   paymentMethod: PaymentMethod | null;
   lines: ReceiptLine[];
+  /**
+   * Gross item value before discounts, for display only. The canonical
+   * `subtotal` is net (sum of line totals, discounts already applied) — see
+   * docs/database.md — so printing it under the label "Subtotal" above a
+   * Discount row makes the receipt's own arithmetic fail to close.
+   */
+  itemsGross: number;
   subtotal: number;
   discountTotal: number;
   shippingFee: number;
@@ -97,6 +104,8 @@ export function buildReceiptView(input: {
     customerName: input.customerName,
     paymentMethod: input.paymentMethod,
     lines: input.lines,
+    // Gross = net + discount, which is exactly sum(unit_price * quantity).
+    itemsGross: addMoney(subtotal, discountTotal),
     subtotal,
     discountTotal,
     shippingFee: roundMoney(input.shippingFee),

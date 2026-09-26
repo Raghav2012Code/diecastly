@@ -18,7 +18,7 @@ import {
 } from "@/components/admin/order-receipt";
 import { buildReceiptView, type ReceiptBusiness } from "@/lib/orders/receipt";
 import { posSaleInputSchema } from "@/lib/validation/order";
-import { addMoney, formatINR, lineTotal, multiplyMoney, roundMoney } from "@/lib/validation/money";
+import { addMoney, clampLineDiscount, formatINR, lineTotal, roundMoney } from "@/lib/validation/money";
 import { cn, newIdempotencyKey } from "@/lib/utils";
 import type { SellableProduct } from "@/lib/types/database.types";
 import {
@@ -224,7 +224,9 @@ export function PosScreen({
       previous.map((line) => {
         if (line.productId !== productId) return line;
         const next = Math.min(Math.max(1, line.quantity + delta), line.available);
-        return next === line.quantity ? line : { ...line, quantity: next };
+        if (next === line.quantity) return line;
+        // A smaller quantity can invalidate an existing discount, so re-clamp.
+        return { ...line, quantity: next, lineDiscount: clampLineDiscount(line.unitPrice, next, line.lineDiscount) };
       }),
     );
   }
@@ -247,9 +249,16 @@ export function PosScreen({
     setEditor({ ...editor, price: value });
     const parsed = Number(value);
     if (value.trim() !== "" && Number.isFinite(parsed) && parsed > 0) {
+      const price = roundMoney(parsed);
       setCart((previous) =>
         previous.map((line) =>
-          line.productId === editor.productId ? { ...line, unitPrice: roundMoney(parsed) } : line,
+          line.productId === editor.productId
+            ? // Lowering the price can leave the discount larger than the line
+              // is now worth, which would show a negative line total and get
+              // the whole sale rejected. Re-clamp here, exactly as the discount
+              // editor does, so the line is always one the server accepts.
+              { ...line, unitPrice: price, lineDiscount: clampLineDiscount(price, line.quantity, line.lineDiscount) }
+            : line,
         ),
       );
     }
@@ -260,10 +269,9 @@ export function PosScreen({
     setEditor({ ...editor, discount: value });
     const line = cart.find((item) => item.productId === editor.productId);
     if (!line) return;
-    const max = multiplyMoney(line.unitPrice, line.quantity);
     const parsed = value.trim() === "" ? 0 : Number(value);
     if (Number.isFinite(parsed) && parsed >= 0) {
-      const next = Math.min(roundMoney(parsed), max);
+      const next = clampLineDiscount(line.unitPrice, line.quantity, parsed);
       setCart((previous) =>
         previous.map((item) =>
           item.productId === editor.productId ? { ...item, lineDiscount: next } : item,
