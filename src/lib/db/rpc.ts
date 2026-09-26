@@ -212,3 +212,148 @@ export async function refundPayment(
   if (error) return fail(error);
   return ok(data as OrderMutationResult);
 }
+
+// ---------------------------------------------------------------------------
+// Storefront (callable without authentication)
+//
+// These two are reachable by `anon`. Everything above re-checks `is_admin()`;
+// these do not, and must not. Neither accepts a price from the caller —
+// `placeOnlineOrder` reads the catalog price inside the function, because the
+// caller is anonymous and has no authority to set one.
+// ---------------------------------------------------------------------------
+
+export type OnlineOrderItemInput = {
+  productId: string;
+  quantity: number;
+};
+
+export type OnlineOrderResult = {
+  order_id: string;
+  order_number: string;
+  access_token: string;
+  total: number;
+  payment_method: "upi" | "cod";
+  expires_at: string | null;
+  idempotent?: boolean;
+};
+
+export async function placeOnlineOrder(
+  client: Client,
+  args: {
+    items: OnlineOrderItemInput[];
+    customer: {
+      name: string;
+      phone: string;
+      email?: string | null;
+      addressLine1: string;
+      addressLine2?: string | null;
+      city: string;
+      state: string;
+      postalCode: string;
+      country?: string | null;
+    };
+    paymentMethod: "upi" | "cod";
+    idempotencyKey?: string | null;
+    notes?: string | null;
+  },
+): Promise<Result<OnlineOrderResult>> {
+  const { data, error } = await client.rpc("place_online_order", {
+    p_items: args.items,
+    p_customer: args.customer,
+    p_payment_method: args.paymentMethod,
+    p_shipping_address: {
+      line1: args.customer.addressLine1,
+      line2: args.customer.addressLine2 ?? null,
+      city: args.customer.city,
+      state: args.customer.state,
+      postal_code: args.customer.postalCode,
+      country: args.customer.country ?? "India",
+    },
+    p_notes: args.notes ?? null,
+    p_idempotency_key: args.idempotencyKey ?? null,
+  });
+  if (error) return fail(error);
+  return ok(data as OnlineOrderResult);
+}
+
+/** Guest order lookup. Requires BOTH the order number and the access token. */
+export async function getOrderByAccess(
+  client: Client,
+  args: { orderNumber: string; accessToken: string },
+): Promise<Result<Record<string, unknown>>> {
+  const { data, error } = await client.rpc("get_order_by_access", {
+    p_order_number: args.orderNumber,
+    p_access_token: args.accessToken,
+  });
+  if (error) return fail(error);
+  return ok((data ?? {}) as Record<string, unknown>);
+}
+
+// ---------------------------------------------------------------------------
+// Fulfilment (admin only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Advances fulfilment one step. The transition table is enforced in the
+ * function; cancelling and reversing go through `cancelOrder` instead. Never
+ * touches the payments ledger (D33).
+ */
+export async function updateOrderStatus(
+  client: Client,
+  args: {
+    orderId: string;
+    newStatus: Exclude<OrderStatus, "cancelled" | "returned">;
+    note?: string | null;
+    courier?: string | null;
+    tracking?: string | null;
+  },
+): Promise<Result<OrderMutationResult>> {
+  const { data, error } = await client.rpc("update_order_status", {
+    p_order_id: args.orderId,
+    p_new_status: args.newStatus,
+    p_note: args.note ?? null,
+    p_courier: args.courier ?? null,
+    p_tracking: args.tracking ?? null,
+  });
+  if (error) return fail(error);
+  return ok(data as OrderMutationResult);
+}
+
+/**
+ * Cancels an order, optionally restocking and/or refunding. Reversal of a
+ * recent in-person sale is the same operation; the window is enforced in the
+ * function from settings, never by the UI (D35).
+ */
+export async function cancelOrder(
+  client: Client,
+  args: {
+    orderId: string;
+    reason: string;
+    restock?: boolean;
+    refund?: boolean;
+    idempotencyKey?: string | null;
+  },
+): Promise<Result<OrderMutationResult>> {
+  const { data, error } = await client.rpc("cancel_order", {
+    p_order_id: args.orderId,
+    p_reason: args.reason,
+    p_restock: args.restock ?? true,
+    p_refund: args.refund ?? true,
+    p_idempotency_key: args.idempotencyKey ?? null,
+  });
+  if (error) return fail(error);
+  return ok(data as OrderMutationResult);
+}
+
+/** Non-financial admin edit. */
+export async function updateOrderNotes(
+  client: Client,
+  args: { orderId: string; notes: string | null },
+): Promise<Result<OrderMutationResult>> {
+  const { data, error } = await client.rpc("update_order_notes", {
+    p_order_id: args.orderId,
+    p_notes: args.notes ?? null,
+  });
+  if (error) return fail(error);
+  return ok(data as OrderMutationResult);
+}

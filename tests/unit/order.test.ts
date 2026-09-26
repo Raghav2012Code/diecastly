@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizePhone,
+  onlineLineSchema,
+  onlineOrderInputSchema,
   posLineSchema,
   posSaleInputSchema,
   recordPaymentSchema,
@@ -63,6 +65,72 @@ describe("normalizePhone", () => {
     expect(normalizePhone("9876543210")).toBe("+919876543210");
     expect(normalizePhone("+91 98765 43210")).toBe("+919876543210");
     expect(normalizePhone("919876543210")).toBe("+919876543210");
+  });
+});
+
+describe("onlineLineSchema", () => {
+  const base = { productId: "11111111-1111-1111-1111-111111111111", quantity: 1 };
+
+  it("takes no unit price, because the online caller is anonymous", () => {
+    // place_online_order is security definer and granted to anon, so a price
+    // from the caller is not trustworthy and is ignored server-side. The
+    // contract must not ask for one.
+    expect(onlineLineSchema.safeParse(base).success).toBe(true);
+    expect(Object.keys(onlineLineSchema.parse(base))).toEqual(["productId", "quantity"]);
+  });
+
+  it("strips a supplied price rather than carrying it through", () => {
+    const parsed = onlineLineSchema.parse({ ...base, unitPrice: 1, lineDiscount: 400 });
+    expect(parsed).toEqual(base);
+  });
+
+  it("still requires a positive integer quantity and a uuid", () => {
+    expect(onlineLineSchema.safeParse({ ...base, quantity: 0 }).success).toBe(false);
+    expect(onlineLineSchema.safeParse({ ...base, quantity: 1.5 }).success).toBe(false);
+    expect(onlineLineSchema.safeParse({ productId: "nope", quantity: 1 }).success).toBe(false);
+  });
+
+  it("leaves the POS line contract requiring a price", () => {
+    // The two channels differ on purpose: the POS caller is an authenticated
+    // admin who may negotiate. Weakening this while fixing the online one
+    // would be the regression worth catching.
+    expect(posLineSchema.safeParse(base).success).toBe(false);
+    expect(posLineSchema.safeParse({ ...base, unitPrice: 250 }).success).toBe(true);
+  });
+});
+
+describe("onlineOrderInputSchema", () => {
+  const valid = {
+    items: [{ productId: "11111111-1111-1111-1111-111111111111", quantity: 1 }],
+    customer: {
+      name: "Priya",
+      phone: "9876543210",
+      addressLine1: "12, 4th Cross",
+      city: "Bengaluru",
+      state: "Karnataka",
+      postalCode: "560038",
+    },
+    paymentMethod: "upi" as const,
+    idempotencyKey: "online-key-0001",
+  };
+
+  it("accepts an order with no price anywhere in the payload", () => {
+    expect(onlineOrderInputSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it("defaults the country", () => {
+    const parsed = onlineOrderInputSchema.parse(valid);
+    expect(parsed.customer.country).toBe("India");
+  });
+
+  it("rejects a non-storefront payment method", () => {
+    expect(
+      onlineOrderInputSchema.safeParse({ ...valid, paymentMethod: "cash" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an empty basket", () => {
+    expect(onlineOrderInputSchema.safeParse({ ...valid, items: [] }).success).toBe(false);
   });
 });
 

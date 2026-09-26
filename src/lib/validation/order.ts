@@ -65,8 +65,20 @@ export const refundPaymentSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
 });
 
+/**
+ * Online checkout line. Deliberately has **no** unit price: `place_online_order`
+ * is `security definer` and granted to `anon`, so the catalog price is the only
+ * price an anonymous caller may be given. Sending one is ignored by the server,
+ * so the contract does not ask for it. The POS keeps its override because that
+ * caller is an authenticated admin entitled to negotiate.
+ */
+export const onlineLineSchema = z.object({
+  productId: z.string().uuid(),
+  quantity: z.number().int().positive(),
+});
+
 export const onlineOrderInputSchema = z.object({
-  items: z.array(posLineSchema).min(1),
+  items: z.array(onlineLineSchema).min(1),
   customer: customerInputSchema.extend({
     addressLine1: z.string().min(1).max(200),
     addressLine2: z.string().max(200).optional(),
@@ -93,6 +105,7 @@ export function normalizePhone(input: string): string {
 
 export type PosLineInput = z.infer<typeof posLineSchema>;
 export type PosSaleInput = z.infer<typeof posSaleInputSchema>;
+export type OnlineLineInput = z.infer<typeof onlineLineSchema>;
 export type OnlineOrderInput = z.infer<typeof onlineOrderInputSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 export type RefundPaymentInput = z.infer<typeof refundPaymentSchema>;
