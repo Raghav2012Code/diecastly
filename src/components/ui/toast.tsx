@@ -44,24 +44,56 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
+      {/*
+        Two live regions rather than one. Success is polite and may wait; a
+        failure is announced assertively, because a polite region is not
+        interrupted - so a failed "Add stock" was announced after whatever the
+        admin did next, and missed entirely if focus moved. Errors that also
+        set inline role="alert" text were covered twice over; the toast-only
+        ones were not covered at all.
+      */}
       <div
         aria-live="polite"
         aria-atomic="false"
         className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2"
       >
-        {items.map((item) => (
-          <div
-            key={item.id}
-            role="status"
+        {items
+          .filter((item) => item.tone !== "error")
+          .map((item) => (
+            <div
+              key={item.id}
+              role="status"
             className={cn(
               "pointer-events-auto rounded-md border border-l-4 border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-lg",
               "motion-safe:animate-[toast-in_160ms_ease-out]",
               toneClass[item.tone],
             )}
           >
-            {item.message}
-          </div>
-        ))}
+              {item.message}
+            </div>
+          ))}
+      </div>
+
+      <div
+        aria-live="assertive"
+        aria-atomic="false"
+        className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2"
+      >
+        {items
+          .filter((item) => item.tone === "error")
+          .map((item) => (
+            <div
+              key={item.id}
+              role="alert"
+              className={cn(
+                "pointer-events-auto rounded-md border border-l-4 border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-lg",
+                "motion-safe:animate-[toast-in_160ms_ease-out]",
+                toneClass[item.tone],
+              )}
+            >
+              {item.message}
+            </div>
+          ))}
       </div>
     </ToastContext.Provider>
   );

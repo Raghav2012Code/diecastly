@@ -65,8 +65,16 @@ export function CustomerPicker({
       setFormError("Enter the customer's name.");
       return;
     }
-    if (digits.length < 6) {
-      setFormError("Enter a phone number with at least 6 digits.");
+    // The normalised phone is the customer's linking key, so a value that
+    // normalises to junk is permanent: the database stores "+123456" and every
+    // later search for that buyer matches only that string. Require a real
+    // Indian mobile number - 10 digits, or 91 followed by 10 - rather than the
+    // 6-character minimum the shared schema allowed.
+    const isIndianMobile =
+      (digits.length === 10 && !digits.startsWith("0")) ||
+      (digits.length === 12 && digits.startsWith("91"));
+    if (!isIndianMobile) {
+      setFormError("Enter a 10-digit mobile number.");
       return;
     }
     onChange({ id: null, name: trimmedName, phone: phone.trim(), email: null });

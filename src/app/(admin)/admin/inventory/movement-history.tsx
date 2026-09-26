@@ -20,6 +20,9 @@ function Delta({ value }: { value: number }) {
   );
 }
 
+/** The modal is a preview, not the full ledger; the copy has to say so. */
+const MOVEMENT_HISTORY_LIMIT = 100;
+
 export function MovementHistoryButton({
   productId,
   productName,
@@ -37,7 +40,7 @@ export function MovementHistoryButton({
     setRows(null);
     setError(null);
     startTransition(async () => {
-      const result = await productMovementsAction(productId, 100);
+      const result = await productMovementsAction(productId, MOVEMENT_HISTORY_LIMIT);
       if (result.ok) setRows(result.data as InventoryMovementWithProduct[]);
       else setError(result.error);
     });
@@ -53,7 +56,7 @@ export function MovementHistoryButton({
         onClose={() => setOpen(false)}
         size="lg"
         title="Movement history"
-        description={`Every stock change for ${productName}, newest first.`}
+        description={`The latest ${MOVEMENT_HISTORY_LIMIT} stock changes for ${productName}, newest first.`}
       >
         {error ? (
           <p role="alert" className="text-sm text-destructive">

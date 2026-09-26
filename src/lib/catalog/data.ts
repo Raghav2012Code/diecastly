@@ -491,14 +491,41 @@ export async function clearPrimaryImage(productId: string): Promise<Result<null>
   return ok(null);
 }
 
+/**
+ * Makes `imageId` the product's primary image.
+ *
+ * The partial unique index permits at most one primary per product, so the new
+ * one cannot be set before the old one is cleared - the order is forced, and
+ * there is a window between the two statements in which the product has no
+ * primary at all. If the second write fails, the previous primary is restored
+ * so the product is never left in that state. Closing the window entirely needs
+ * a single statement or an RPC; neither is available on the metadata lane, and
+ * shipping an untested database function for it would be worse than a
+ * compensating write.
+ */
 export async function setPrimaryImage(productId: string, imageId: string): Promise<Result<null>> {
   const supabase = await createClient();
+
+  const { data: current, error: readError } = await supabase
+    .from("product_images")
+    .select("id")
+    .eq("product_id", productId)
+    .eq("is_primary", true)
+    .maybeSingle();
+  if (readError) return fail(readError);
+  const previousId = (current as { id: string } | null)?.id ?? null;
+
   const cleared = await clearPrimaryImage(productId);
   if (!cleared.ok) return cleared;
 
   const { error } = await supabase.from("product_images").update({ is_primary: true }).eq("id", imageId);
-  if (error) return fail(error);
-  return ok(null);
+  if (!error) return ok(null);
+
+  // Put the product back the way it was rather than leaving it with no primary.
+  if (previousId) {
+    await supabase.from("product_images").update({ is_primary: true }).eq("id", previousId);
+  }
+  return fail(error);
 }
 
 export async function addProductImage(input: {
@@ -562,6 +589,20 @@ export async function reorderProductImages(
   return ok(null);
 }
 
+/**
+ * Deletes an image and, if it was the primary, promotes a replacement in the
+ * same operation.
+ *
+ * The database constraint guarantees *at most* one primary per product but
+ * nothing guaranteed *at least* one, and deletion did not consider the flag. So
+ * deleting the primary image from a product with three images left two images
+ * and no primary: the storefront and every admin thumbnail fell back to the
+ * placeholder, and uploading a replacement did not fix it, because the
+ * automatic promotion only ever fired for a product with zero images.
+ *
+ * The successor is the next image by display order, falling back to the first
+ * remaining one, so the choice matches what the admin sees in the list.
+ */
 export async function deleteProductImage(imageId: string): Promise<Result<null>> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -573,9 +614,34 @@ export async function deleteProductImage(imageId: string): Promise<Result<null>>
   if (!data) return ok(null);
 
   const row = data as ProductImageRow;
+
+  if (row.is_primary) {
+    const { data: successors, error: successorError } = await supabase
+      .from("product_images")
+      .select("id")
+      .eq("product_id", row.product_id)
+      .neq("id", imageId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true })
+      .limit(1);
+    if (successorError) return fail(successorError);
+
+    const successor = (successors as { id: string }[] | null)?.[0];
+    if (successor) {
+      const { error: promoteError } = await supabase
+        .from("product_images")
+        .update({ is_primary: true })
+        .eq("id", successor.id);
+      if (promoteError) return fail(promoteError);
+    }
+  }
+
   const { error: deleteError } = await supabase.from("product_images").delete().eq("id", imageId);
   if (deleteError) return fail(deleteError);
 
+  // The row is gone first: a storage failure leaves an orphaned file, which is
+  // recoverable, whereas failing before the delete would leave the list
+  // pointing at a file that is already gone.
   await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([row.storage_path]);
   return ok(null);
 }

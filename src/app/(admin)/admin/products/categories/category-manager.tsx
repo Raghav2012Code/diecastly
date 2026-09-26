@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
+import { forbiddenParentIds } from "@/lib/catalog/tree";
 import { categoryInputSchema } from "@/lib/validation/catalog";
 import type { CategoryRow } from "@/lib/types/database.types";
 import { createCategoryAction, updateCategoryAction } from "../actions";
@@ -57,7 +58,14 @@ export function CategoryManager({ categories }: { categories: CategoryRow[] }) {
   const { toast } = useToast();
   const router = useRouter();
 
-  const parentOptions = (excludeId?: string) => categories.filter((category) => category.id !== excludeId);
+  // A category may not be its own ancestor: the schema and the database both
+  // permit a cycle, and nothing walks the tree recursively yet, so a loop would
+  // save cleanly today and hang the first consumer that does.
+  const parentOptions = (excludeId?: string) => {
+    if (!excludeId) return categories;
+    const forbidden = forbiddenParentIds(categories, excludeId);
+    return categories.filter((category) => !forbidden.has(category.id));
+  };
 
   function validate(values: FormValues) {
     const parsed = categoryInputSchema.safeParse(payload(values));
