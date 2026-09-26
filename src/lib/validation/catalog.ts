@@ -61,7 +61,7 @@ export const optionalBarcode = z
  * maps to the generic message — so the admin is told "Something went wrong"
  * rather than that the price is too large.
  */
-const MAX_MONEY = 9_999_999_999.99;
+export const MAX_MONEY = 9_999_999_999.99;
 
 export const moneyField = (message: string) =>
   z.coerce

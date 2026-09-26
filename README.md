@@ -14,7 +14,9 @@ with Supabase as the entire backend.
 - **Phase 2 — catalog & inventory:** complete (products, categories, suppliers, images, opening stock, restock, adjustments, movement ledger).
 - **Phase 3 — POS & payments:** complete (Record Sale with a live receipt, orders list and detail, payments and refunds, printable receipts).
 - **Phase 4 — storefront:** complete (catalog with search/filter/sort, product detail with gallery, client-side cart, guest checkout via `place_online_order`, token-accessed order confirmation).
-- **Phases 5—7:** not started (see `docs/roadmap.md`). Phase 5 is the online order queue and fulfilment UI; the RPCs it needs are already built and asserted, so only the screens are missing.
+- **Phase 5 — online order ops:** complete (order queue with fulfilment actions, cancel and in-person reversal, customer list).
+- **Phase 6 — reporting:** complete (dashboard, sales with CSV export, analytics with product margin, business settings).
+- **Phase 7:** not started (edge-case tests, responsive QA, low-stock alerts, polish, release checklist).
 
 > Docker is not installed on the current machine. Phases 0–2 were validated against a real
 > PostgreSQL 18 cluster with a Supabase shim rather than `supabase start`; the Phase 3
