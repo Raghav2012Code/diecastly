@@ -307,6 +307,83 @@ export type SettingsRow = {
 };
 
 /** `v_order_financials` — the derived payment state for one order. */
+// ---------------------------------------------------------------------------
+// Public storefront view shapes
+//
+// These mirror the DEFINER views in `20260925120400_views.sql` and
+// `20260926120400_public_image_gallery.sql`. They carry only safe columns: no
+// purchase cost, no profit, no customer data, no stock ledger.
+//
+// Availability is read from `v_products_public`'s own flags and never
+// recomputed, so the catalog grid and the product page cannot disagree about
+// whether something is in stock.
+// ---------------------------------------------------------------------------
+
+/** `v_public_settings` — the business details a shopper is allowed to see. */
+export type PublicSettingsRow = {
+  business_name: string;
+  business_phone: string | null;
+  business_email: string | null;
+  upi_id: string | null;
+  upi_qr_path: string | null;
+  currency: string;
+  cod_enabled: boolean;
+  default_shipping_fee: number;
+  order_prefix: string;
+};
+
+/** `v_categories_public` — active categories only, for the catalog filter. */
+export type PublicCategoryRow = {
+  id: string;
+  name: string;
+  slug: string;
+  parent_id: string | null;
+  sort_order: number;
+};
+
+/**
+ * `v_products_public` — an active product, as a shopper may see it.
+ *
+ * `quantity` is the live stock figure; `is_out_of_stock` and `is_low_stock`
+ * are derived from it in SQL, and the storefront trusts those flags rather than
+ * re-deriving thresholds, so "Sold out" means the same thing on every page.
+ */
+export type VProductsPublicRow = {
+  id: string;
+  name: string;
+  slug: string;
+  brand: string | null;
+  model: string | null;
+  series: string | null;
+  description: string | null;
+  selling_price: number;
+  category_id: string | null;
+  is_featured: boolean;
+  created_at: string;
+  quantity: number;
+  is_out_of_stock: boolean;
+  is_low_stock: boolean;
+  primary_image_path: string | null;
+};
+
+/**
+ * `v_product_images_public` — one image of an active product, for the gallery.
+ *
+ * Only images of active products are exposed, so a draft or archived product's
+ * photography is unreachable. A separate view rather than a column on
+ * `v_products_public` because the gallery is fetched per product while the
+ * catalog is fetched per page, and a jsonb column would repeat every image path
+ * on every row of every catalog page.
+ */
+export type VProductImagesPublicRow = {
+  id: string;
+  product_id: string;
+  storage_path: string;
+  alt_text: string | null;
+  sort_order: number;
+  is_primary: boolean;
+};
+
 export type VOrderFinancialsRow = {
   order_id: string;
   order_number: string;
