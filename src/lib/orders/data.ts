@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { istDayBoundary } from "@/lib/dates";
 import { fail, ok, type Result } from "@/lib/db/errors";
 import type {
   DerivedPaymentStatus,
@@ -56,13 +57,6 @@ function sanitizeSearch(term: string): string {
     .trim();
 }
 
-/** IST day boundary as a UTC instant. Reporting uses Asia/Kolkata throughout. */
-function istBoundary(date: string, endOfDay: boolean): string | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  const time = endOfDay ? "23:59:59.999" : "00:00:00.000";
-  const parsed = new Date(`${date}T${time}+05:30`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
 
 export async function listOrders(params: OrderListParams = {}): Promise<Result<OrderListPage>> {
   const supabase = await createClient();
@@ -86,9 +80,9 @@ export async function listOrders(params: OrderListParams = {}): Promise<Result<O
     );
   }
 
-  const fromIso = params.from ? istBoundary(params.from, false) : null;
+  const fromIso = params.from ? istDayBoundary(params.from, false) : null;
   if (fromIso) query = query.gte("created_at", fromIso);
-  const toIso = params.to ? istBoundary(params.to, true) : null;
+  const toIso = params.to ? istDayBoundary(params.to, true) : null;
   if (toIso) query = query.lte("created_at", toIso);
 
   // Newest first. There is no sort control on this list; a `sort` parameter here

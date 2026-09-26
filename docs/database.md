@@ -91,7 +91,7 @@ Partial unique index on `(product_id)` where `movement_type = 'initial'` — a p
 **Reference contract (enforced by CHECK):**
 - `sale`, `order_cancel` ⇒ `reference_type = 'order'` and `reference_id IS NOT NULL`.
 - `initial`, `restock`, `adjustment`, `damage`, `loss` ⇒ `reference_id IS NULL`.
-- `return` ⇒ manual in v1 (`reference_id IS NULL`); an order-linked return flow is deferred.
+- `return` ⇒ manual in v1. The CHECK permits `reference_id IS NULL` **or** `reference_type = 'order'`, so an order-linked return is allowed by the schema and simply not built yet; see the constraint comment in the inventory migration.
 The RPC layer must set these consistently; the constraint makes violations impossible to persist.
 
 Current stock is queried through the `v_product_stock` view.
@@ -127,6 +127,7 @@ Phone/email **link** orders to a customer for the seller's history. They never a
 | `access_token` | uuid not null unique default gen_random_uuid() | guest order access |
 | `expires_at` | timestamptz | set for unpaid/pending online orders |
 | `idempotency_key` | text unique | server-side dedupe for order/sale creation |
+| `note` | text | free text recorded with the movement |
 | `notes` | text | |
 | `created_by` | uuid → auth.users | null for storefront |
 | `cancel_reason` | text | |
@@ -143,7 +144,8 @@ Constraints keep all money ≥ 0.
 | `id` | uuid PK | |
 | `order_id` | uuid not null → orders (cascade) | |
 | `product_id` | uuid → products (set null) | nullable so history survives |
-| `product_name`, `sku` | text not null | snapshots |
+| `product_name` | text not null | name snapshot |
+| `sku` | text | SKU snapshot; nullable because `products.sku` is nullable and both sale functions copy it verbatim |
 | `quantity` | int not null | `CHECK (quantity > 0)` |
 | `unit_price` | numeric(12,2) not null | **actual** sale price; `CHECK (unit_price > 0)` — v1 forbids zero-value lines |
 | `unit_cost` | numeric(12,2) not null default 0 | **snapshot** cost |

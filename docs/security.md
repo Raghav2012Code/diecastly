@@ -21,7 +21,7 @@ Approved security reference.
 
 | Table | anon | authenticated (admin) |
 |---|---|---|
-| `admin_users` | none | SELECT own row only; no client writes |
+| `admin_users` | none | No client access at all. A self-select policy exists but there is no table grant, so the policy gates nothing; `is_admin()` is `security definer` and reads the table as its owner. Stronger than the policy implies. |
 | `suppliers` | none | full via `is_admin()` |
 | `categories` | SELECT where `is_active` | full |
 | `products` | SELECT where `status = 'active'` (via `v_products_public`) | full |
@@ -50,7 +50,8 @@ Every RPC must:
   - **Admin RPCs** → `authenticated` only, and each begins by asserting `is_admin()` (definer bypasses RLS, so the assertion is the guard).
   - **Storefront RPCs** (`place_online_order`, `get_order_by_access`) → `anon, authenticated`.
 - Validate all inputs internally; never trust client-supplied totals, prices, or ids.
-- Raise distinct SQLSTATEs for expected failures so the UI can map them to friendly messages: `insufficient_stock`, `invalid_transition`, `already_cancelled`, `over_refund`, `product_inactive`.
+- Raise a recognisable code for every expected failure so the UI can map it to a friendly message. **Reality today:** all of them raise `P0001` and are distinguished by the exception *message*, which the error-translation module matches on. The codes are `insufficient_stock`, `invalid_transition`, `over_payment`, `over_refund`, `nothing_to_refund`, `product_inactive`, `product_not_found`, `order_not_found`, `outside_reversal_window`, `use_cancel_order`, `idempotency_conflict`, `invalid_unit_price`, `invalid_discount`, `invalid_quantity`, `invalid_delta`, `invalid_reason`, `invalid_payment`, `invalid_payment_method`, `empty_items`, `customer_required`, `customer_name_phone_required`, `shipping_address_required`, `cod_disabled`, `not_authorized`. Two machine-readable classes are also in use: `22023` for invalid parameters and `42501` for authorization.
+- **A unit test enumerates that list literally and fails if any code has no friendly message**, so a newly raised code cannot silently reach the interface as a generic failure. `already_cancelled` is not a code: a repeat cancellation returns the existing result idempotently rather than raising. Converting these to distinct SQLSTATEs is a known follow-up and deliberately not done — message matching already works, and the conversion would touch every function.
 - Return only the data the caller is entitled to.
 
 The Supabase `service_role` key bypasses RLS and is used **server-side only**; it is never exposed to the browser.
@@ -67,7 +68,7 @@ The Supabase `service_role` key bypasses RLS and is used **server-side only**; i
 | `refund_payment` | admin | Append compensating negative payment; never changes fulfillment status |
 | `restock_product` | admin | `+qty`, `restock` movement, optional current-cost update |
 | `adjust_stock` | admin | Signed change, `adjustment`/`damage`/`loss`/`return` movement |
-| `set_initial_stock` | admin | First `initial` movement for a new product; idempotent — a retry returns the existing result and cannot double stock |
+| `set_initial_stock` | admin | First `initial` movement for a new product; idempotent — a retry returns the existing result and cannot double stock. Optionally updates `products.purchase_cost`, the one place a stock RPC writes product metadata; the current caller never passes a cost, so that branch is dormant |
 | `get_order_by_access` | anon | Read one order only when number + token match |
 | `update_order_notes` | admin | Edit non-financial notes (kept out of direct table writes) |
 

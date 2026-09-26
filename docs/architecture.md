@@ -96,11 +96,15 @@ src/
                         customers, sales, analytics, settings, login
   components/{ui,admin,store}
   lib/
-    supabase/{client,server}.ts
-    db/rpc.ts
+    supabase/{client,server,middleware}.ts
+    db/rpc.ts, db/errors.ts
     validation/
-    money.ts, dates.ts
+      money.ts
+      catalog.ts, inventory.ts, order.ts
+    dates.ts
+    list-state.ts, list-params.ts
     types/database.types.ts
+  middleware.ts
   hooks/use-cart.ts
 supabase/
   migrations/           schema, RLS, functions
