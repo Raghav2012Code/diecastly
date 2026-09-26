@@ -26,7 +26,13 @@ function revalidateInventory() {
   revalidatePath("/admin/products");
 }
 
-export type StockResult = { quantity: number };
+/**
+ * `repeated` is true when the database matched an earlier request carrying the
+ * same idempotency key. That is correct on a genuine retry, and wrong when the
+ * admin changed the request, which is why the client scopes the key to the
+ * intent rather than to the dialog being open.
+ */
+export type StockResult = { quantity: number; repeated: boolean };
 
 export async function restockAction(input: unknown): Promise<ActionResult<StockResult>> {
   const parsed = restockSchema.safeParse(input);
@@ -44,7 +50,7 @@ export async function restockAction(input: unknown): Promise<ActionResult<StockR
   if (!result.ok) return fromFriendly(result.error);
 
   revalidateInventory();
-  return { ok: true, data: { quantity: result.data.quantity } };
+  return { ok: true, data: { quantity: result.data.quantity, repeated: result.data.idempotent === true } };
 }
 
 export async function adjustAction(input: unknown): Promise<ActionResult<StockResult>> {
@@ -62,7 +68,7 @@ export async function adjustAction(input: unknown): Promise<ActionResult<StockRe
   if (!result.ok) return fromFriendly(result.error);
 
   revalidateInventory();
-  return { ok: true, data: { quantity: result.data.quantity } };
+  return { ok: true, data: { quantity: result.data.quantity, repeated: result.data.idempotent === true } };
 }
 
 export async function setInitialStockAction(input: unknown): Promise<ActionResult<StockResult>> {
@@ -78,7 +84,7 @@ export async function setInitialStockAction(input: unknown): Promise<ActionResul
   if (!result.ok) return fromFriendly(result.error);
 
   revalidateInventory();
-  return { ok: true, data: { quantity: result.data.quantity } };
+  return { ok: true, data: { quantity: result.data.quantity, repeated: result.data.already_initialized === true } };
 }
 
 export async function updateThresholdAction(input: unknown): Promise<ActionResult<null>> {

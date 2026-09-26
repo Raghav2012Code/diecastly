@@ -109,3 +109,52 @@ export function isErrorField(error: FieldError | null, field: string): boolean {
 export function adjustDelta(input: Pick<AdjustInput, "direction" | "quantity">): number {
   return input.direction === "increase" ? input.quantity : -input.quantity;
 }
+
+/**
+ * The fields that define what a stock mutation is *asking for*. A change to any
+ * of them is a new intent and needs a new idempotency key; the free-text note is
+ * not one of them, so correcting a note must not become a second movement.
+ */
+export type IdempotencyKey = { key: string; fingerprint: string };
+
+export type MutationIntent = {
+  quantity?: number;
+  unitCost?: number | null;
+  setCurrentCost?: boolean;
+  direction?: string;
+  reason?: string;
+};
+
+/** Stable string form of an intent, for comparison against the last submission. */
+export function intentFingerprint(intent: MutationIntent): string {
+  return JSON.stringify([
+    intent.quantity ?? null,
+    intent.unitCost ?? null,
+    intent.setCurrentCost ?? null,
+    intent.direction ?? null,
+    intent.reason ?? null,
+  ]);
+}
+
+/**
+ * The idempotency key to use for a submission.
+ *
+ * A key identifies one intent, not one open dialog. Both stock dialogs used to
+ * mint a key when the dialog opened and reuse it for every attempt, so a
+ * corrected resubmit after a lost response was silently discarded: the database
+ * recognised the key, concluded it was a retry, and returned the *first*
+ * result. The dialog then reported success with a plausible quantity, and the
+ * correction the admin made simply never happened.
+ *
+ * Reusing the key for an unchanged request is the point — that is what stops a
+ * double-click or a retry from applying twice.
+ */
+export function keyForIntent(
+  previous: IdempotencyKey | null,
+  intent: MutationIntent,
+  mint: () => string,
+): IdempotencyKey {
+  const fingerprint = intentFingerprint(intent);
+  if (previous && previous.fingerprint === fingerprint) return previous;
+  return { key: mint(), fingerprint };
+}

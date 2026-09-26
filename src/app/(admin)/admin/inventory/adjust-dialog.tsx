@@ -13,6 +13,7 @@ import {
   errorForField,
   fieldErrorFromZod,
   isErrorField,
+  keyForIntent,
   type FieldError,
 } from "@/lib/validation/inventory";
 import { newIdempotencyKey } from "@/lib/utils";
@@ -44,12 +45,14 @@ export function AdjustDialog({
   const [note, setNote] = useState("");
   const [error, setError] = useState<FieldError | null>(null);
   const [pending, startTransition] = useTransition();
-  const keyRef = useRef("");
+  // Scoped to the intent, not to the dialog: see keyForIntent.
+  const keyRef = useRef<{ key: string; fingerprint: string } | null>(null);
   const { toast } = useToast();
   const router = useRouter();
 
   function openDialog() {
-    keyRef.current = newIdempotencyKey();
+    // A fresh dialog is a fresh intent, even with identical values.
+    keyRef.current = null;
     setDirection("decrease");
     setQuantity("");
     setReason("adjustment");
@@ -71,7 +74,7 @@ export function AdjustDialog({
       quantity,
       reason,
       note,
-      idempotencyKey: keyRef.current,
+      idempotencyKey: "",
     });
     if (!parsed.success) {
       // Both channels: a toast, because the client-side path used to be silent,
@@ -82,11 +85,30 @@ export function AdjustDialog({
       return;
     }
     setError(null);
+
+    // A key identifies one intent. Reuse it only while the request is
+    // unchanged, so a lost response can be retried safely but a corrected
+    // quantity or reason is a new request and actually gets applied.
+    const data = parsed.data;
+    const scoped = keyForIntent(
+      keyRef.current,
+      { quantity: data.quantity, direction: data.direction, reason: data.reason },
+      newIdempotencyKey,
+    );
+    keyRef.current = scoped;
+
     startTransition(async () => {
-      const result = await adjustAction(parsed.data);
+      const result = await adjustAction({ ...data, idempotencyKey: scoped.key });
       if (result.ok) {
-        toast(`${productName} now at ${result.data.quantity}`, "success");
-        setOpen(false);
+        toast(
+          result.data.repeated
+            ? `Already recorded — ${productName} still at ${result.data.quantity}`
+            : `${productName} now at ${result.data.quantity}`,
+          result.data.repeated ? "error" : "success",
+        );
+        if (!result.data.repeated) {
+          setOpen(false);
+        }
         router.refresh();
       } else {
         setError({ field: result.field ?? null, message: result.error });
