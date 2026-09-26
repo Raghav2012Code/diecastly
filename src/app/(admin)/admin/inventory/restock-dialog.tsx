@@ -9,6 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { restockSchema } from "@/lib/validation/inventory";
+import {
+  errorForField,
+  fieldErrorFromZod,
+  isErrorField,
+  type FieldError,
+} from "@/lib/validation/inventory";
 import { newIdempotencyKey } from "@/lib/utils";
 import { restockAction } from "./actions";
 
@@ -26,7 +32,7 @@ export function RestockDialog({
   const [unitCost, setUnitCost] = useState("");
   const [setCurrentCost, setSetCurrentCost] = useState(false);
   const [note, setNote] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FieldError | null>(null);
   const [pending, startTransition] = useTransition();
   const keyRef = useRef("");
   const { toast } = useToast();
@@ -52,7 +58,11 @@ export function RestockDialog({
       idempotencyKey: keyRef.current,
     });
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Check the form and try again.");
+      // Both channels: a toast, because the client-side path used to be silent,
+      // and the field error, so the message appears where the input is.
+      const mapped = fieldErrorFromZod(parsed.error);
+      setError(mapped);
+      toast(mapped.message, "error");
       return;
     }
     setError(null);
@@ -63,7 +73,7 @@ export function RestockDialog({
         setOpen(false);
         router.refresh();
       } else {
-        setError(result.error);
+        setError({ field: result.field ?? null, message: result.error });
         toast(result.error, "error");
       }
     });
@@ -92,7 +102,12 @@ export function RestockDialog({
         }
       >
         <div className="space-y-4">
-          <FormField label="Quantity received" htmlFor="restock-quantity" required>
+          <FormField
+            label="Quantity received"
+            htmlFor="restock-quantity"
+            required
+            error={errorForField(error, "quantity")}
+          >
             <Input
               id="restock-quantity"
               type="number"
@@ -100,13 +115,18 @@ export function RestockDialog({
               step="1"
               value={quantity}
               onChange={(event) => setQuantity(event.target.value)}
-              aria-invalid={Boolean(error)}
+              aria-invalid={isErrorField(error, "quantity")}
               placeholder="0"
               className="tnum"
               autoFocus
             />
           </FormField>
-          <FormField label="Unit cost" htmlFor="restock-cost" hint="Leave as is to keep the existing cost.">
+          <FormField
+            label="Unit cost"
+            htmlFor="restock-cost"
+            hint="Leave as is to keep the existing cost."
+            error={errorForField(error, "unitCost")}
+          >
             <Input
               id="restock-cost"
               type="number"
@@ -114,6 +134,7 @@ export function RestockDialog({
               step="0.01"
               value={unitCost}
               onChange={(event) => setUnitCost(event.target.value)}
+              aria-invalid={isErrorField(error, "unitCost")}
               placeholder="0.00"
               className="tnum"
             />
@@ -125,14 +146,26 @@ export function RestockDialog({
             />
             Update the product&apos;s current cost to this value
           </label>
-          <FormField label="Note" htmlFor="restock-note" error={error}>
+          <FormField
+            label="Note"
+            htmlFor="restock-note"
+            hint="Optional, e.g. invoice number."
+            error={errorForField(error, "note")}
+          >
             <Input
               id="restock-note"
               value={note}
               onChange={(event) => setNote(event.target.value)}
+              aria-invalid={isErrorField(error, "note")}
               placeholder="Optional, e.g. invoice number"
             />
           </FormField>
+          {/* A failure that belongs to no single input still has to be shown. */}
+          {error && error.field === null ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error.message}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             Past sale cost snapshots are never rewritten by a restock.
           </p>

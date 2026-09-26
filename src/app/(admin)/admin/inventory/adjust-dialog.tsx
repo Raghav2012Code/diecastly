@@ -9,6 +9,12 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { adjustSchema } from "@/lib/validation/inventory";
+import {
+  errorForField,
+  fieldErrorFromZod,
+  isErrorField,
+  type FieldError,
+} from "@/lib/validation/inventory";
 import { newIdempotencyKey } from "@/lib/utils";
 import { adjustAction } from "./actions";
 
@@ -36,7 +42,7 @@ export function AdjustDialog({
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState<Reason>("adjustment");
   const [note, setNote] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FieldError | null>(null);
   const [pending, startTransition] = useTransition();
   const keyRef = useRef("");
   const { toast } = useToast();
@@ -68,7 +74,11 @@ export function AdjustDialog({
       idempotencyKey: keyRef.current,
     });
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Check the form and try again.");
+      // Both channels: a toast, because the client-side path used to be silent,
+      // and the field error, so the message appears where the input is.
+      const mapped = fieldErrorFromZod(parsed.error);
+      setError(mapped);
+      toast(mapped.message, "error");
       return;
     }
     setError(null);
@@ -79,7 +89,7 @@ export function AdjustDialog({
         setOpen(false);
         router.refresh();
       } else {
-        setError(result.error);
+        setError({ field: result.field ?? null, message: result.error });
         toast(result.error, "error");
       }
     });
@@ -130,9 +140,19 @@ export function AdjustDialog({
                 Add
               </Button>
             </div>
+            {errorForField(error, "direction") ? (
+              <p role="alert" className="text-sm text-destructive">
+                {errorForField(error, "direction")}
+              </p>
+            ) : null}
           </div>
 
-          <FormField label="Quantity" htmlFor="adjust-quantity" required>
+          <FormField
+            label="Quantity"
+            htmlFor="adjust-quantity"
+            required
+            error={errorForField(error, "quantity")}
+          >
             <Input
               id="adjust-quantity"
               type="number"
@@ -140,17 +160,23 @@ export function AdjustDialog({
               step="1"
               value={quantity}
               onChange={(event) => setQuantity(event.target.value)}
-              aria-invalid={Boolean(error)}
+              aria-invalid={isErrorField(error, "quantity")}
               placeholder="0"
               className="tnum"
             />
           </FormField>
 
-          <FormField label="Reason" htmlFor="adjust-reason" hint={reasonHint[reason]}>
+          <FormField
+            label="Reason"
+            htmlFor="adjust-reason"
+            hint={reasonHint[reason]}
+            error={errorForField(error, "reason")}
+          >
             <Select
               id="adjust-reason"
               value={reason}
               onChange={(event) => changeReason(event.target.value as Reason)}
+              aria-invalid={isErrorField(error, "reason")}
             >
               <option value="adjustment">Adjustment</option>
               <option value="damage">Damage</option>
@@ -159,14 +185,27 @@ export function AdjustDialog({
             </Select>
           </FormField>
 
-          <FormField label="Note" htmlFor="adjust-note" error={error}>
+          <FormField
+            label="Note"
+            htmlFor="adjust-note"
+            hint="Optional."
+            error={errorForField(error, "note")}
+          >
             <Input
               id="adjust-note"
               value={note}
               onChange={(event) => setNote(event.target.value)}
+              aria-invalid={isErrorField(error, "note")}
               placeholder="Optional"
             />
           </FormField>
+
+          {/* A failure that belongs to no single input still has to be shown. */}
+          {error && error.field === null ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error.message}
+            </p>
+          ) : null}
 
           <p className="text-xs text-muted-foreground">
             Stock can never go below zero — a reduction larger than the count is rejected.

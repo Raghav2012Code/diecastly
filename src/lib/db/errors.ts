@@ -24,18 +24,54 @@ const UNIQUE_FIELDS: Record<string, { field: string; message: string }> = {
   categories_slug_key: { field: "slug", message: "That category slug is already in use." },
 };
 
+/**
+ * Every code the migrations raise, with a message that names the remedy.
+ *
+ * This table is validated against the raised-code list by a unit test that
+ * enumerates the codes explicitly, so a newly raised code fails the build
+ * rather than reaching the admin as "Something went wrong". A generic message
+ * therefore always means an unmapped code, which makes a bug report from the
+ * interface actionable.
+ *
+ * The `already_initialized` case that used to be mapped here is gone: opening
+ * stock already being recorded is a successful result carrying a flag, never
+ * raised, so a message for it was unreachable.
+ */
 const MESSAGES: Array<[string, string]> = [
+  // Stock
   ["insufficient_stock", "Not enough stock available for that change."],
   ["product_not_found", "That product no longer exists."],
   ["product_inactive", "Only active products can be sold."],
   ["invalid_quantity", "Enter a quantity greater than zero."],
   ["invalid_delta", "Enter a non-zero change."],
   ["invalid_reason", "Choose a valid reason."],
+  // Prices and discounts
   ["invalid_unit_price", "Unit price must be greater than zero."],
   ["invalid_discount", "The discount is larger than the line value."],
+  // Orders
+  ["empty_items", "Add at least one item to the order."],
+  ["order_not_found", "That order no longer exists."],
+  ["invalid_transition", "That status change is not allowed from where the order is now."],
+  ["use_cancel_order", "Cancel the order instead of changing its status."],
+  ["outside_reversal_window", "This sale is outside the in-person reversal window."],
+  // Payments
+  ["invalid_payment", "Enter an amount greater than zero."],
+  ["over_payment", "That is more than the outstanding balance."],
+  ["over_refund", "You can only refund what has been received."],
+  ["nothing_to_refund", "This order has no money to refund."],
+  ["invalid_payment_method", "Choose a valid payment method."],
+  ["idempotency_conflict", "This request key was already used for a different order."],
+  // Storefront checkout
+  ["customer_required", "Customer details are required."],
+  ["customer_name_phone_required", "A customer name and phone number are required."],
+  ["shipping_address_required", "A shipping address is required."],
+  ["cod_disabled", "Cash on delivery is switched off. Offer another payment method."],
+  // Authorization
   ["not_authorized", "You are not authorized to do that."],
-  ["already_initialized", "Opening stock has already been recorded for this product."],
 ];
+
+/** The generic fallback. Reaching it means a raised code is missing from MESSAGES. */
+export const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export function describeDbError(error: unknown): FriendlyError {
   if (!error || typeof error !== "object") {
@@ -67,5 +103,5 @@ export function describeDbError(error: unknown): FriendlyError {
     }
   }
 
-  return { message: "Something went wrong. Please try again." };
+  return { message: GENERIC_ERROR_MESSAGE };
 }
