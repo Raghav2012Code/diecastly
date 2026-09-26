@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:db": "node scripts/db-suite.mjs",
+    "test:db:single": "node scripts/single-user.mjs --assertions=scripts/money-assertions.sql",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:db",
     "test:watch": "vitest",
     "db:start": "supabase start",
