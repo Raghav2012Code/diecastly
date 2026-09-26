@@ -15,6 +15,22 @@ export function fail(error: unknown): { ok: false; error: FriendlyError } {
   return { ok: false, error: describeDbError(error) };
 }
 
+/**
+ * A failure whose message is already user-facing.
+ *
+ * `fail` translates *database* errors, so a plain `{ message }` handed to it
+ * matches no SQLSTATE, no constraint name and no token, and is replaced by the
+ * generic message. That silently swallowed the one error in the app written
+ * specifically to name a remedy — uniqueSlug's "set one explicitly" — which is
+ * exactly the message an admin needs after 50 collisions.
+ *
+ * Use this when the application has already diagnosed the failure and knows the
+ * remedy. Do not use it to bypass translation of a real database error.
+ */
+export function failWith(message: string): { ok: false; error: FriendlyError } {
+  return { ok: false, error: { message } };
+}
+
 type DbErrorLike = { code?: string | null; message?: string | null; details?: string | null };
 
 const UNIQUE_FIELDS: Record<string, { field: string; message: string }> = {
@@ -100,11 +116,25 @@ export function describeDbError(error: unknown): FriendlyError {
     return { message: "You are not authorized to do that." };
   }
 
-  for (const [needle, friendly] of MESSAGES) {
-    if (haystack.includes(needle)) {
-      return { message: friendly };
+  // A bare `raise exception 'some_code'` sets the Postgres message to the code
+  // itself, so an exact hit is the common case and is unambiguous.
+  const trimmed = haystack.trim();
+  const exact = MESSAGES.find(([needle]) => needle === trimmed);
+  if (exact) return { message: exact[1] };
+
+  // Fall back to a substring search, but take the LONGEST matching token rather
+  // than the first. Scanning in declaration order let a token that is a prefix
+  // of another shadow it: `invalid_payment` sits four entries above
+  // `invalid_payment_method`, so a rejected payment method was reported as
+  // "Enter an amount greater than zero." Longest-first makes the order of this
+  // table irrelevant, so the next code added cannot introduce the same bug.
+  let best: [string, string] | undefined;
+  for (const entry of MESSAGES) {
+    if (haystack.includes(entry[0]) && (best === undefined || entry[0].length > best[0].length)) {
+      best = entry;
     }
   }
+  if (best) return { message: best[1] };
 
   return { message: GENERIC_ERROR_MESSAGE };
 }

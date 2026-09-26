@@ -55,11 +55,39 @@ export const optionalBarcode = z
   .preprocess(emptyToNull, barcodeSchema.nullish())
   .transform((value) => value ?? null);
 
+/**
+ * The most a `numeric(12,2)` column can hold. Anything above this passes
+ * validation, then fails at the database with a range error that `describeDbError`
+ * maps to the generic message — so the admin is told "Something went wrong"
+ * rather than that the price is too large.
+ */
+const MAX_MONEY = 9_999_999_999.99;
+
 export const moneyField = (message: string) =>
   z.coerce
     .number({ invalid_type_error: message })
+    // `z.coerce.number()` yields NaN for an out-of-range numeric string such as
+    // "1e400", which .nonnegative() already rejects, so this is belt and braces
+    // against a literal Infinity reaching storage and later making formatINR throw.
+    .finite("Enter a valid amount.")
     .nonnegative("Amount cannot be negative.")
+    .max(MAX_MONEY, "That amount is too large.")
     .default(0);
+
+/**
+ * `low_stock_threshold` is a single column, so it gets a single definition.
+ *
+ * It previously had two, with different bounds: the product form had no ceiling
+ * while the inventory dialog capped at 100,000. An admin could therefore save
+ * 300,000 through one screen and be refused the same value by the other, and
+ * anything above int4 failed at the database. `validation/inventory.ts`
+ * re-exports this rather than keeping its own copy.
+ */
+export const lowStockThresholdSchema = z.coerce
+  .number()
+  .int("Use a whole number.")
+  .nonnegative("Threshold cannot be negative.")
+  .max(100_000, "Use 100,000 or less.");
 
 export const productInputSchema = z.object({
   name: z.string().trim().min(1, "Enter a product name.").max(160),
@@ -74,11 +102,7 @@ export const productInputSchema = z.object({
   barcode: optionalBarcode,
   purchaseCost: moneyField("Enter a valid cost."),
   sellingPrice: moneyField("Enter a valid price."),
-  lowStockThreshold: z.coerce
-    .number()
-    .int("Use a whole number.")
-    .nonnegative("Threshold cannot be negative.")
-    .default(0),
+  lowStockThreshold: lowStockThresholdSchema.default(0),
   status: z.enum(PRODUCT_STATUSES).default("draft"),
   isFeatured: z.boolean().default(false),
 });
@@ -134,7 +158,11 @@ export const productImageInputSchema = z.object({
   productId: z.string().uuid(),
   storagePath: z.string().trim().min(1).max(400),
   altText: optionalText(200),
-  isPrimary: z.boolean().default(false),
+  // No `isPrimary`. The product_images_promote_first BEFORE INSERT trigger makes
+  // a product's first image its primary, so the flag could never change the
+  // outcome; it only enabled a second round-trip that could fail after the row
+  // was committed. Which existing image is primary is changed through
+  // setPrimaryImage, which is one transaction (D47, D48).
 });
 
 export type ProductInput = z.infer<typeof productInputSchema>;

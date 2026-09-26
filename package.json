@@ -22,8 +22,9 @@
     "db:push": "supabase db push",
     "db:diff": "supabase db diff",
     "test:db:catalog": "node scripts/single-user.mjs --assertions=scripts/catalog-assertions.sql",
-    "test:db:fallback": "npm run test:db:single && npm run test:db:catalog",
-    "verify:fallback": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:db:fallback"
+    "test:db:fallback": "npm run test:db:single && npm run test:db:catalog && npm run test:db:orders",
+    "verify:fallback": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:db:fallback",
+    "test:db:orders": "node scripts/single-user.mjs --assertions=scripts/order-assertions.sql"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

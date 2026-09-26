@@ -86,7 +86,6 @@ export function ProductImages({
           productId,
           storagePath: path,
           altText: null,
-          isPrimary: images.length === 0 && added === 0,
         });
         if (!result.ok) {
           setError(result.error);

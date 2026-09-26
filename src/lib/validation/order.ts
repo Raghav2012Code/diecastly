@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PAYMENT_METHODS } from "@/lib/types/database.types";
+import { clampLineDiscount } from "@/lib/validation/money";
 
 export { PAYMENT_METHODS };
 
@@ -14,14 +15,28 @@ const idempotencyKeySchema = z.string().min(8).max(100);
  * POS line. v1 requires a strictly positive unit price: zero-value lines are
  * not allowed. Mirrored by a database CHECK (unit_price > 0).
  */
-export const posLineSchema = z.object({
-  productId: z.string().uuid(),
-  quantity: z.number().int().positive(),
-  unitPrice: z
-    .number()
-    .positive({ message: "Unit price must be greater than zero" }),
-  lineDiscount: z.number().min(0).default(0),
-});
+export const posLineSchema = z
+  .object({
+    productId: z.string().uuid(),
+    quantity: z.number().int().positive(),
+    unitPrice: z
+      .number()
+      .positive({ message: "Unit price must be greater than zero" }),
+    lineDiscount: z.number().min(0).default(0),
+  })
+  .transform((line) => ({
+    ...line,
+    // `clampLineDiscount` documents itself as "the client-side half, so the till
+    // can never build a line the server will reject" — but the schema the server
+    // action validates with never applied it, so a discount larger than the line
+    // passed Zod and was refused by the database with `invalid_discount`.
+    //
+    // Applied in a transform rather than a refinement because the clamp depends on
+    // BOTH unitPrice and quantity, so it can only run once both are known. The
+    // POS screen already re-clamps on every change to either; this makes the
+    // shared contract enforce the same rule rather than describing it.
+    lineDiscount: clampLineDiscount(line.unitPrice, line.quantity, line.lineDiscount),
+  }));
 
 export const paymentInputSchema = z.object({
   amount: z.number().positive().max(MAX_AMOUNT),

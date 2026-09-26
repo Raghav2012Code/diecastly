@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ZodError } from "zod";
 import { MANUAL_MOVEMENT_TYPES } from "@/lib/types/database.types";
+import { lowStockThresholdSchema } from "@/lib/validation/catalog";
 
 /**
  * Shared inventory schemas. Quantities are strictly positive integers; a stock
@@ -63,11 +64,11 @@ export const adjustSchema = z
 
 export const thresholdSchema = z.object({
   productId: z.string().uuid(),
-  lowStockThreshold: z.coerce
-    .number()
-    .int("Use a whole number.")
-    .nonnegative("Threshold cannot be negative.")
-    .max(100000),
+  // Re-exported rather than re-declared. This used to be a second, independent
+  // copy of the same rule with a different ceiling from the product form's,
+  // which had none — so one screen accepted a threshold the other refused, and
+  // both disagreed with the int4 column. One column, one definition.
+  lowStockThreshold: lowStockThresholdSchema,
 });
 
 export type InitialStockInput = z.infer<typeof initialStockSchema>;

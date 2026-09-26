@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import * as rpc from "@/lib/db/rpc";
-import { fail, ok, type Result } from "@/lib/db/errors";
+import { fail, failWith, ok, type Result } from "@/lib/db/errors";
 import {
   slugify,
   type CategoryInput,
@@ -267,9 +267,13 @@ async function uniqueSlug(
     if (!data) return ok(candidate);
     candidate = `${safeBase}-${attempt}`;
   }
-  return fail({
-    message: `Could not find a free slug for "${safeBase}" after 50 attempts. Set one explicitly.`,
-  });
+  // failWith, not fail: `fail` translates DATABASE errors, and a plain object
+  // matches no SQLSTATE, no constraint and no token, so the remedy below was
+  // being replaced by the generic "Something went wrong" — the one message in
+  // the app written to name a fix, and the one an admin never saw.
+  return failWith(
+    `Could not find a free slug for "${safeBase}" after 50 attempts. Set one explicitly.`,
+  );
 }
 
 function productColumns(input: ProductInput, slug: string) {
@@ -506,22 +510,45 @@ export async function setPrimaryImage(productId: string, imageId: string): Promi
   return rpc.setPrimaryImage(supabase, { productId, imageId });
 }
 
+/**
+ * Adds an image to a product.
+ *
+ * `isPrimary` is deliberately NOT a parameter. The `product_images_promote_first`
+ * BEFORE INSERT trigger already makes a product's first image its primary, so
+ * the flag this used to take could not change the outcome — the only caller
+ * passed it for exactly that first image. It existed solely to add a second
+ * round-trip, and that round-trip could fail *after* the row was committed,
+ * leaving the admin with an error toast, an already-committed row that
+ * `revalidateCatalog` never refreshed to reveal, an uploaded storage object, and
+ * a retry that produced a duplicate image and a second orphaned file.
+ *
+ * Changing WHICH existing image is primary goes through `setPrimaryImage`, which
+ * is a single transaction (D47, D48).
+ */
 export async function addProductImage(input: {
   productId: string;
   storagePath: string;
   altText: string | null;
-  isPrimary: boolean;
 }): Promise<Result<ProductImageRow>> {
   const supabase = await createClient();
 
-  const { data: last } = await supabase
+  // The error is checked, not swallowed. If this read fails, `last` is null,
+  // nextOrder becomes 0, and the insert below SUCCEEDS with a sort_order that
+  // collides with the product's existing first image — reintroducing outside the
+  // RPC exactly the duplicate ordering `reorder_product_images` exists to
+  // prevent, invisibly: the read failure never surfaced because the write that
+  // followed it worked.
+  const { data: last, error: probeError } = await supabase
     .from("product_images")
     .select("sort_order")
     .eq("product_id", input.productId)
     .order("sort_order", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (probeError) return fail(probeError);
 
+  // -1 is correct only for a product with no images at all, which is now
+  // distinguishable from a failed read because the error above returns.
   const nextOrder = ((last as { sort_order: number } | null)?.sort_order ?? -1) + 1;
 
   const { data, error } = await supabase
@@ -531,25 +558,13 @@ export async function addProductImage(input: {
       storage_path: input.storagePath,
       alt_text: input.altText,
       sort_order: nextOrder,
-      // Never ask for the primary flag on insert. A BEFORE INSERT trigger makes a
-      // product's FIRST image its primary automatically, so a product can never
-      // end up holding an image with no primary. Claiming the flag here instead
-      // would collide with the partial unique index whenever the product already
-      // had a primary. Changing which image is primary goes through
-      // setPrimaryImage, which is one transaction.
       is_primary: false,
     })
     .select("*")
     .single();
   if (error) return fail(error);
 
-  const row = data as ProductImageRow;
-  if (input.isPrimary) {
-    const primary = await setPrimaryImage(input.productId, row.id);
-    if (!primary.ok) return primary;
-    row.is_primary = true;
-  }
-  return ok(row);
+  return ok(data as ProductImageRow);
 }
 
 export async function updateImageAlt(

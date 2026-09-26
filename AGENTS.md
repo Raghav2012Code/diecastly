@@ -27,15 +27,19 @@ A change is done only when all four exit clean, not before: `npm run typecheck`,
   | --- | --- | --- |
   | `npm run test:db:single` | `scripts/money-assertions.sql` | the money trust boundary |
   | `npm run test:db:catalog` | `scripts/catalog-assertions.sql` | atomic image ordering, primary selection, deletion, and the function grants |
-  | `npm run test:db:fallback` | both, in sequence | the SQL half of the gate |
+  | `npm run test:db:orders` | `scripts/order-assertions.sql` | cancellation restock, idempotency scoping, the customer link, and the payment caps |
+| `npm run test:db:fallback` | all three, in sequence | the SQL half of the gate |
 
-  `npm run verify:fallback` is the whole gate (`typecheck`, `lint`, `test`, `build`, then both suites) and is what to run in place of `npm run verify` on this host, which cannot complete because `test:db` needs a reachable server. `npm run verify` remains the real gate and is unchanged.
+  `npm run verify:fallback` is the whole gate (`typecheck`, `lint`, `test`, `build`, then all three suites) and is what to run in place of `npm run verify` on this host, which cannot complete because `test:db` needs a reachable server. `npm run verify` remains the real gate and is unchanged.
 
   This is a fallback, not a replacement for `npm run test:db`: it has no pgTAP, cannot `CREATE DATABASE`, and `RAISE NOTICE` output goes to the server log rather than stdout, so the success signal is a `SELECT` that is echoed as a result row.
 
 - **Assert the assertions, every time you add one.** A green plain-SQL suite proves nothing unless it can fail. Before believing a new assertion, break the code it claims to cover and confirm the suite exits non-zero — for example, drop a trigger, or `grant execute ... to anon`, and check the named FAIL message appears. Two traps make a passing assertion vacuous rather than absent:
 
   - A test that mutates an array built with `array_agg(id)` over an ordered *subquery* is not testing what it looks like: an ORDER BY outside the aggregate does not constrain the aggregate's order. Put `order by` **inside** `array_agg`.
+  - When patching a file with a script, use a **function** replacer, never a string. In `String.prototype.replace`, `$$` in a replacement is an escape for one literal `$`, so writing `$$;` through a string replacement silently produces `$;`. This corrupted a migration terminator here and the patch reported success while changing nothing.
+  - Assert an absolute stock figure only when the fixture guarantees it. A "nothing changed" claim must compare against a value read immediately before the call, because earlier sections in the same file legitimately move that stock.
+  - A `DO` block is one transaction, so a `raise exception` on a failed assertion **rolls back that block's own writes**. A later block that depends on them will fail for the wrong reason, which reads like a second bug.
   - For an all-or-nothing claim, "the call was rejected" is only half the assertion. Assert the rejected call also **changed nothing**, or it passes even against an implementation that half-applied before failing.
 
 - **A `revoke ... from anon` you delete may not grant anything.** `anon` has no default grant; the default is `PUBLIC`. Deleting `revoke execute ... from public, anon` grants `anon` nothing, so the suite stays green and proves nothing. To negative-test a grant, `grant` the privilege to the wrong role for real.

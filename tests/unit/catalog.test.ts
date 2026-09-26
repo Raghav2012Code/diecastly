@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   categoryInputSchema,
+  moneyField,
   productCreateSchema,
   productInputSchema,
   supplierInputSchema,
   slugify,
 } from "@/lib/validation/catalog";
+import { thresholdSchema } from "@/lib/validation/inventory";
 
 describe("product validation", () => {
   it("accepts a minimal product and applies safe defaults", () => {
@@ -86,5 +88,74 @@ describe("slugify", () => {
     expect(slugify("Hot Wheels: Nissan Skyline GT-R (R34)")).toBe("hot-wheels-nissan-skyline-gt-r-r34");
     expect(slugify("   ")).toBe("item");
     expect(slugify("Café 1:64")).toBe("cafe-1-64");
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Numeric bounds: the shared contract must not be looser than the column.
+// ---------------------------------------------------------------------------
+
+describe("moneyField", () => {
+  const price = moneyField("Enter a valid price.");
+
+  it("accepts the largest value numeric(12,2) can hold", () => {
+    expect(price.safeParse(9_999_999_999.99).success).toBe(true);
+  });
+
+  it("rejects money beyond what the column can store", () => {
+    // Previously unbounded, so a mistyped price passed validation and then failed
+    // at the database with a range error that maps to the generic message.
+    expect(price.safeParse(99_999_999_999).success).toBe(false);
+    expect(price.safeParse("99999999999").success).toBe(false);
+  });
+
+  it("rejects non-finite money", () => {
+    expect(price.safeParse(Number.POSITIVE_INFINITY).success).toBe(false);
+    expect(price.safeParse(Number.NaN).success).toBe(false);
+    // The control for the claim that "1e400" was reaching storage as Infinity:
+    // z.coerce.number() yields NaN for it, so it was already rejected. The
+    // .finite() guard is not the thing fixing that, and this pins why.
+    expect(price.safeParse("1e400").success).toBe(false);
+  });
+
+  it("still rejects negative money", () => {
+    expect(price.safeParse(-1).success).toBe(false);
+  });
+});
+
+describe("lowStockThreshold", () => {
+  // The product form and the inventory dialog are two screens writing one
+  // int4 column. They previously had independent definitions with different
+  // ceilings -- the form had none -- so one accepted a value the other refused,
+  // and both disagreed with the column.
+  const BOUNDARIES = [0, 1, 1000, 100_000, 100_001, 2_147_483_647, 2_147_483_648, 1e300];
+
+  it("agrees between the product form and the inventory dialog", () => {
+    for (const value of BOUNDARIES) {
+      const form = productInputSchema.shape.lowStockThreshold.safeParse(value);
+      const dialog = thresholdSchema.shape.lowStockThreshold.safeParse(value);
+      expect(
+        form.success,
+        `product form disagreed with the dialog at ${String(value)}`,
+      ).toBe(dialog.success);
+    }
+  });
+
+  it("rejects a threshold above the agreed ceiling", () => {
+    expect(productInputSchema.shape.lowStockThreshold.safeParse(100_001).success).toBe(false);
+    expect(thresholdSchema.shape.lowStockThreshold.safeParse(100_001).success).toBe(false);
+  });
+
+  it("rejects a threshold that does not fit int4", () => {
+    expect(productInputSchema.shape.lowStockThreshold.safeParse(2_147_483_648).success).toBe(false);
+    expect(thresholdSchema.shape.lowStockThreshold.safeParse(2_147_483_648).success).toBe(false);
+  });
+
+  it("still accepts a whole, non-negative threshold within range", () => {
+    expect(productInputSchema.shape.lowStockThreshold.safeParse(0).success).toBe(true);
+    expect(productInputSchema.shape.lowStockThreshold.safeParse(100_000).success).toBe(true);
+    expect(productInputSchema.shape.lowStockThreshold.safeParse(-1).success).toBe(false);
+    expect(productInputSchema.shape.lowStockThreshold.safeParse(1.5).success).toBe(false);
   });
 });

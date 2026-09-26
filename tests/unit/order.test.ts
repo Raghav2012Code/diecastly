@@ -12,6 +12,40 @@ import {
 describe("posLineSchema", () => {
   const base = { productId: "11111111-1111-1111-1111-111111111111", quantity: 1 };
 
+  it("clamps a discount larger than the line, which the database rejects", () => {
+    // The database raises invalid_discount for line_discount > unit_price *
+    // quantity. The schema used to accept this and forward it, so the shared
+    // contract could describe a line the server would refuse.
+    const parsed = posLineSchema.parse({ ...base, unitPrice: 100, lineDiscount: 9999 });
+    expect(parsed.lineDiscount).toBe(100);
+  });
+
+  it("re-clamps when the price drops under an already-valid discount", () => {
+    // The case that matters, and the one my first attempt at this test got wrong:
+    // 50 off 2 x 40 is NOT over the line, because the line is worth 80. The
+    // discount has to exceed unitPrice * quantity to be clamped, so the price
+    // has to fall far enough -- 2 x 20 is worth 40, and 50 now exceeds it.
+    //
+    // This is exactly why the POS re-clamps on every change to price or
+    // quantity: a discount valid at one price is not valid at a lower one.
+    const parsed = posLineSchema.parse({ ...base, quantity: 2, unitPrice: 20, lineDiscount: 50 });
+    expect(parsed.lineDiscount).toBe(40);
+
+    // And the control: at the original price the same discount is left alone.
+    const original = posLineSchema.parse({ ...base, quantity: 2, unitPrice: 100, lineDiscount: 50 });
+    expect(original.lineDiscount).toBe(50);
+  });
+
+  it("leaves a valid discount alone", () => {
+    const parsed = posLineSchema.parse({ ...base, quantity: 2, unitPrice: 100, lineDiscount: 50 });
+    expect(parsed.lineDiscount).toBe(50);
+  });
+
+  it("treats a missing discount as zero", () => {
+    const parsed = posLineSchema.parse({ ...base, unitPrice: 100 });
+    expect(parsed.lineDiscount).toBe(0);
+  });
+
   it("requires a strictly positive unit price", () => {
     expect(posLineSchema.safeParse({ ...base, unitPrice: 0 }).success).toBe(false);
     expect(posLineSchema.safeParse({ ...base, unitPrice: -5 }).success).toBe(false);

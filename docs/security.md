@@ -37,7 +37,9 @@ Approved security reference.
 
 Rule of thumb: **anything financial or stock-related is RPC-write-only.** Only pure metadata (products, categories, suppliers, images, settings, customers) accepts direct RLS writes.
 
-Public views (`v_products_public`, `v_categories_public`, `v_public_settings`) are **definer** views that expose only safe columns, and anon is granted **no** base-table privileges at all. (Invoker views are deliberately not used here: RLS is row-level, so invoker views plus an anon table grant would expose sensitive columns such as `purchase_cost`.)
+Public views (`v_products_public`, `v_product_images_public`, `v_categories_public`, `v_public_settings`) are **definer** views that expose only safe columns, and anon is granted **no** base-table privileges at all. (Invoker views are deliberately not used here: RLS is row-level, so invoker views plus an anon table grant would expose sensitive columns such as `purchase_cost`.)
+
+`v_product_images_public` exists because the product gallery needs every image, not just the primary one, and `v_products_public` carries only `primary_image_path`. It is a separate view rather than a widened grant on `product_images`: granting anon that table would expose every column of every image row for every product, **including drafts and archived products**, whose photography must stay private. The view filters to `status = 'active'` products, and both that filter and the grant are asserted in `scripts/catalog-assertions.sql` — a new object reachable by anon is a new public surface, so it is tested rather than assumed.
 
 ## 4. Security-definer function requirements
 
@@ -86,7 +88,8 @@ Each RPC invocation is one implicit transaction; any `RAISE` rolls back everythi
 - `orders.access_token` is a 122-bit `gen_random_uuid()`, unique, generated at order creation.
 - Returned exactly once by `place_online_order`, shown on the confirmation page.
 - `get_order_by_access(order_number, token)` requires **both**; a missing/incorrect token returns a generic "Order not found" — no information leak.
-- Phone/email are linking keys only and **never** authorize access to an order.
+- Phone/email are linking keys only and **never** authorize access to an order. Note the corollary: a caller must not be able to *obtain* a token by guessing one, which is why a reused `idempotency_key` raises `idempotency_conflict` instead of replaying another request's order (D50).
+- The storefront **links** to a customer record but never modifies one (D51). `customers` is admin-only under RLS, but `place_online_order` is `security definer` and granted to `anon`, so a clobbering upsert there would let any anonymous caller rewrite a customer's name and email.
 - The token is a bearer secret: never logged, excluded from list payloads, never included in admin tables.
 - Admin can rotate a token if a link leaks.
 - A future email/SMS one-time-code lookup can be added without schema changes.
