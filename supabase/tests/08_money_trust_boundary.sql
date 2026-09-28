@@ -5,13 +5,18 @@
 --   * the stored subtotal equals the sum of the stored line totals
 --   * a recorded payment may not exceed the outstanding balance
 --
--- Requires a real PostgreSQL 18 with a Supabase shim. These assertions have
--- not been executed: the development machine has no Docker and no local
--- PostgreSQL, so `supabase test db` cannot run there.
+-- Requires a real PostgreSQL 18 with a Supabase shim. These assertions run
+-- under `npm run test:db:tap`, which executes them via the plain-SQL pgTAP shim
+-- in scripts/pgtap-shim.sql. That is not pgTAP: `supabase test db` remains the
+-- real gate and still needs a host with Docker.
+--
+-- The plan count below was 21 while the file held 29 assertions, so `finish()`
+-- would have aborted it — the file had never been executed. It is now checked
+-- mechanically: `test:db:tap` fails a file whose run count does not match plan().
 
 begin;
 set search_path = public, extensions;
-select plan(21);
+select plan(29);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at
@@ -33,6 +38,14 @@ values
   ('21000000-0000-0000-0000-000000000005', 'Cap Target',     'tb-cap-target',     'TB-005', 400, 150, 'active'),
   -- Sub-paisa precision in the catalog, to exercise the rounding path.
   ('21000000-0000-0000-0000-000000000006', 'Odd Cents',      'tb-odd-cents',      'TB-006', 0.005, 0, 'active');
+
+-- The opening stock below is set through an admin RPC, so an admin session has to
+-- exist first. This line was missing, and the file had never been executed: every
+-- `set_initial_stock` call raised `not_authorized`, which aborted the transaction
+-- and failed the file for a reason unrelated to money. Claims are dropped again
+-- below for the anonymous price cases, and restored further down for the sale
+-- cases — the three sections each run as a different caller, deliberately.
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000000c1","role":"authenticated"}';
 
 select public.set_initial_stock('21000000-0000-0000-0000-000000000001', 20, 200);
 select public.set_initial_stock('21000000-0000-0000-0000-000000000002', 20, 100);
@@ -120,11 +133,18 @@ select throws_ok(
 );
 
 -- The lane must stay open: no session, and the order still decrements stock.
+--
+-- 20 opening, less one unit for each of the three genuine anonymous orders above
+-- (tb-price-low, tb-price-high, tb-price-discount). The refused tb-price-zero
+-- call is on a different product and decrements nothing. This said 18, which was
+-- the figure before the tampered-discount case was added to the file; it had never
+-- been executed, so the drift was invisible. The count is spelled out rather than
+-- left implicit so that adding a case above has to update it deliberately.
 select is(
   (select quantity from public.inventory_stock
     where product_id = '21000000-0000-0000-0000-000000000001'),
-  18,
-  'a genuine anonymous order still decrements stock exactly once'
+  17,
+  'three genuine anonymous orders each decrement stock exactly once'
 );
 
 select is(
@@ -219,8 +239,7 @@ select is(
 
 select lives_ok(
   $$ select public.record_in_person_sale(
-       '[{"productId":"21000000-0000-0000-0000-000000000006","quantity":3,"lineDiscount":0.005},
-         {"productId":"21000000-0000-0000-0000-000000000006","quantity":1,"lineDiscount":0}]'::jsonb,
+       '[{"productId":"21000000-0000-0000-0000-000000000006","quantity":3,"lineDiscount":0.005}, {"productId":"21000000-0000-0000-0000-000000000006","quantity":1,"lineDiscount":0}]'::jsonb,
        'cash'::public.payment_method, null, null, null, 'tb-rounding'::text) $$,
   'a multi-line sale with sub-paisa input is recorded'
 );

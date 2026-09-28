@@ -87,15 +87,54 @@ Sign in at `/admin/login`.
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Start the Next.js dev server |
+| `npm run start` | Serve the production build |
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
 | `npm test` | Vitest unit tests |
-| `npm run format` | Prettier |
-| `npm run db:start` / `db:stop` | Local Supabase stack |
+| `npm run test:watch` | Vitest in watch mode |
+| `npm run format` | Prettier write |
+| `npm run format:check` | Prettier check |
+| `npm run db:start` / `db:stop` | Local Supabase stack (requires Docker) |
 | `npm run db:reset` | Apply migrations + seed locally |
-| `npm run db:test` | Run pgTAP invariant tests (requires Docker) |
 | `npm run db:push` | Push migrations to the linked remote project |
+| `npm run db:diff` | Diff local schema against the remote |
+
+### The verification gate
+
+`npm test` alone is **not** the gate — it runs Vitest, which says nothing about money,
+because every RPC, constraint, RLS policy and view is SQL. The gate has two halves.
+
+**The real gate** (needs a reachable PostgreSQL; on a normal machine this is the one to run):
+
+| Command | What it does |
+| --- | --- |
+| `npm run verify` | `typecheck`, `lint`, `test`, `build`, then `test:db` |
+| `npm run test:db` | Applies every migration to a scratch database and runs `supabase/tests/*.sql` under real pgTAP |
+
+**The fallback gate** (for a machine where no client can connect — see *Environment caveats*):
+
+| Command | Assertions | Covers |
+| --- | --- | --- |
+| `npm run test:db:shim` | `scripts/pgtap-shim-selftest/` | that the pgTAP shim itself can still fail |
+| `npm run test:db:single` | `scripts/money-assertions.sql` | the money trust boundary |
+| `npm run test:db:catalog` | `scripts/catalog-assertions.sql` | atomic image ordering, primary selection, deletion, function grants |
+| `npm run test:db:orders` | `scripts/order-assertions.sql` | cancellation restock, idempotency scoping, customer link, payment caps |
+| `npm run test:db:tap` | `supabase/tests/*.sql` | all 8 pgTAP files, run under the plain-SQL shim |
+| `npm run test:db:fallback` | all of the above, in sequence | the SQL half of the gate |
+| `npm run verify:fallback` | the whole gate | what to run in place of `npm run verify` here |
+
+### Environment caveats
+
+The development machine for this repo cannot run the real gate: Docker is not
+installed, and its local PostgreSQL cannot fork a backend, so no client ever
+connects. `scripts/single-user.mjs` works around that by driving `postgres --single`
+directly, and `scripts/pgtap-shim.sql` supplies the six pgTAP functions the suite
+uses so `supabase/tests/*.sql` can execute at all.
+
+**A green `test:db:tap` is not "the pgTAP suite passed."** It means the assertions ran
+and the SQL behaved as they assert, under a stand-in. `supabase test db` remains the
+real gate. See `AGENTS.md` for the full set of environment gotchas.
 
 ## Security model at a glance
 

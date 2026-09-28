@@ -3,7 +3,7 @@
 
 begin;
 set search_path = public, extensions;
-select plan(23);
+select plan(24);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at
@@ -145,11 +145,25 @@ select is(
   'an archived product keeps its order history'
 );
 
+-- Two movements, not one: the opening stock and the sale. This asserted a bare
+-- count of 1, which is wrong — the fixture writes an `initial` movement and then
+-- a `sale` movement — and it had never been executed, so the error survived. Now
+-- asserted per type, so losing one of the two is caught rather than masked by a
+-- total that still happens to be two.
 select is(
   (select count(*)::integer from public.inventory_movements
-    where product_id = '10000000-0000-0000-0000-000000000002'),
+    where product_id = '10000000-0000-0000-0000-000000000002'
+      and movement_type = 'initial'),
   1,
-  'an archived product keeps its movement ledger'
+  'an archived product keeps its opening-stock movement'
+);
+
+select is(
+  (select count(*)::integer from public.inventory_movements
+    where product_id = '10000000-0000-0000-0000-000000000002'
+      and movement_type = 'sale'),
+  1,
+  'an archived product keeps its sale movement'
 );
 
 -- v_low_stock returns exactly the expected rows: active products at or below

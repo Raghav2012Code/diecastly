@@ -28,11 +28,13 @@ A change is done only when all four exit clean, not before: `npm run typecheck`,
   | `npm run test:db:single` | `scripts/money-assertions.sql` | the money trust boundary |
   | `npm run test:db:catalog` | `scripts/catalog-assertions.sql` | atomic image ordering, primary selection, deletion, and the function grants |
   | `npm run test:db:orders` | `scripts/order-assertions.sql` | cancellation restock, idempotency scoping, the customer link, and the payment caps |
-| `npm run test:db:fallback` | all three, in sequence | the SQL half of the gate |
+  | `npm run test:db:tap` | `supabase/tests/*.sql` (8 files, 91 assertions) | the pgTAP files, run under `scripts/pgtap-shim.sql` |
+  | `npm run test:db:shim` | `scripts/pgtap-shim-selftest/` (8 scenarios) | that the shim itself can still **fail** — six of the eight are meant to fail |
+| `npm run test:db:fallback` | all five, in sequence | the SQL half of the gate |
 
-  `npm run verify:fallback` is the whole gate (`typecheck`, `lint`, `test`, `build`, then all three suites) and is what to run in place of `npm run verify` on this host, which cannot complete because `test:db` needs a reachable server. `npm run verify` remains the real gate and is unchanged.
+  `npm run verify:fallback` is the whole gate (`typecheck`, `lint`, `test`, `build`, then all five suites) and is what to run in place of `npm run verify` on this host, which cannot complete because `test:db` needs a reachable server. `npm run verify` remains the real gate and is unchanged.
 
-  This is a fallback, not a replacement for `npm run test:db`: it has no pgTAP, cannot `CREATE DATABASE`, and `RAISE NOTICE` output goes to the server log rather than stdout, so the success signal is a `SELECT` that is echoed as a result row.
+  This is a fallback, not a replacement for `npm run test:db`: it cannot `CREATE DATABASE`, and `RAISE NOTICE` output goes to the server log rather than stdout, so the success signal is a `SELECT` that is echoed as a result row.
 
 - **Assert the assertions, every time you add one.** A green plain-SQL suite proves nothing unless it can fail. Before believing a new assertion, break the code it claims to cover and confirm the suite exits non-zero — for example, drop a trigger, or `grant execute ... to anon`, and check the named FAIL message appears. Two traps make a passing assertion vacuous rather than absent:
 
@@ -44,8 +46,13 @@ A change is done only when all four exit clean, not before: `npm run typecheck`,
 
 - **A `revoke ... from anon` you delete may not grant anything.** `anon` has no default grant; the default is `PUBLIC`. Deleting `revoke execute ... from public, anon` grants `anon` nothing, so the suite stays green and proves nothing. To negative-test a grant, `grant` the privilege to the wrong role for real.
 - **Feeding `--single` needs a SQL-aware splitter, and its comments must be removed rather than flattened.** `scripts/sql-split.mjs` emits one statement per line and strips comments. Both halves are load-bearing. Collapsing whitespace instead of removing comments is what breaks: flattening the newline that terminates a `--` comment extends that comment over the rest of the statement, so a function body swallows its own closing `$$` and PostgreSQL reports the deeply misleading "syntax error at end of input". That is exactly how the Diecastly migrations failed the first time this was run. String literals are never touched, and a newline inside one is refused rather than rewritten.
-- **pgTAP is still unavailable** — not bundled with the EDB Windows binaries, and no MSYS2 package exists, so `CREATE EXTENSION pgtap` needs a cross-toolchain build (an MSVC-built server against a UCRT64 gcc). `supabase/tests/*.sql` still cannot run on this host; only the plain-SQL assertions can.
-- State in any completion report whether the pgTAP suite actually ran. If it did not, say so plainly and say what *was* verified instead. "All migrations applied and the money behaviour asserted" is a real result and should be reported as exactly that, never inflated into "the suite passed".
+- **pgTAP itself is still unavailable, but `supabase/tests/*.sql` now runs anyway.** The real extension is not bundled with the EDB Windows binaries and no MSYS2 package exists, so `CREATE EXTENSION pgtap` needs a cross-toolchain build (an MSVC-built server against a UCRT64 gcc). `scripts/pgtap-shim.sql` closes the gap the other way: it implements the six pgTAP functions those files actually use — `plan`, `is`, `ok`, `lives_ok`, `throws_ok`, `finish` — in plain SQL, and `test:db:tap` runs all eight files under `postgres --single`. **`npm run test:db` and `supabase test db` remain the real gate; the shim does not replace them.** Three properties of the shim are load-bearing, so do not "simplify" them away:
+
+  - `is()` compares with `IS NOT DISTINCT FROM`, never `=`. `is(NULL, NULL)` must not pass by accident and `is(NULL, 5)` must not pass at all. Numerics compare by value, so `1.10 = 1.1` as pgTAP intends.
+  - `throws_ok()` checks the SQLSTATE **and** the message token. D49 pins every business failure to `P0001` and distinguishes them by message text, so matching the state alone would let an assertion pass on the wrong failure.
+  - `finish()` raises on a count mismatch or on any failure, and the harness *requires* its summary line. A file that silently dropped its `finish()` fails instead of passing quietly — which is exactly how `08_money_trust_boundary.sql` sat at `plan(21)` against 29 assertions for its entire life.
+- **State in any completion report that the pgTAP files ran under the shim, not under pgTAP.** `supabase test db` still cannot run here. "All 8 files, 91 assertions passed under the shim" is the honest result and should be reported as exactly that, never inflated into "the pgTAP suite passed".
+- **The harness reset must drop `auth` and `storage`, not just `public`.** The plain-SQL assertion suites have no `begin; ... rollback;`, so their fixture rows in `auth.users` and `storage.objects` are committed. Dropping only `public` let those rows accumulate across every run until a later run inserting the same id died on a duplicate-key error — a failure with no relationship to what it was testing. The pgTAP files *do* wrap themselves in a transaction, which is why this stayed invisible until they were run back to back against one database.
 - Public sign-up is disabled; create the admin user from the SQL under **Create the admin user** in the README.
 
 ## Agent skills
