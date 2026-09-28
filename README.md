@@ -16,13 +16,14 @@ with Supabase as the entire backend.
 - **Phase 4 — storefront:** complete (catalog with search/filter/sort, product detail with gallery, client-side cart, guest checkout via `place_online_order`, token-accessed order confirmation).
 - **Phase 5 — online order ops:** complete (order queue with fulfilment actions, cancel and in-person reversal, customer list).
 - **Phase 6 — reporting:** complete (dashboard, sales with CSV export, analytics with product margin, business settings).
-- **Phase 7:** not started (edge-case tests, responsive QA, low-stock alerts, polish, release checklist).
+- **Phase 7 — hardening:** complete (mobile admin nav, low-stock badge, responsive fixes, edge-case tests, release checklist).
 
-> Docker is not installed on the current machine. Phases 0–2 were validated against a real
-> PostgreSQL 18 cluster with a Supabase shim rather than `supabase start`; the Phase 3
-> invariant suite (`supabase/tests/07_phase3_pos_payments.sql`) is authored but still needs
-> `supabase test db` on a machine with the local stack. Browser-level QA likewise requires a
-> running local stack.
+> Docker is not installed on the current machine. Every migration is validated against a
+> real PostgreSQL 18 cluster with a Supabase shim rather than `supabase start`. The eight
+> pgTAP files in `supabase/tests/` now execute via `npm run test:db:tap`, which runs them
+> under a plain-SQL stand-in (`scripts/pgtap-shim.sql`) — that is **not** pgTAP, and
+> `supabase test db` remains the real gate. Browser-level QA requires a running local
+> stack; see #20.
 
 ## Stack
 
