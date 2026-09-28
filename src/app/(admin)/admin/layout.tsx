@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ToastProvider } from "@/components/ui/toast";
-import { getLowStock } from "@/lib/reports/data";
+import { getLowStockCounts } from "@/lib/reports/data";
 import { AdminNav } from "./nav";
 import { SignOutButton } from "./sign-out-button";
 
@@ -23,10 +23,12 @@ export default async function AdminLayout({
   // Counted here rather than in the nav because the nav is a client component and
   // this needs the reporting view. A failure is not fatal: the admin simply gets
   // no badge, which is the right degradation for an advisory count.
-  const lowStock = await getLowStock(200);
-  const lowStockCount = lowStock.ok
-    ? lowStock.data.filter((row) => row.is_low_stock && !row.is_out_of_stock).length
-    : 0;
+  //
+  // An exact count query, not a filtered row read: counting the rows of
+  // `getLowStock(200)` would have made the badge read "N of the first 200", which
+  // is a different number from the one the dashboard shows for the same thing.
+  const lowStock = await getLowStockCounts();
+  const lowStockCount = lowStock.ok ? lowStock.data.lowStock : 0;
 
   return (
     <div className="flex min-h-screen">

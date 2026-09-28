@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { PAYMENT_METHODS, recordPaymentSchema, refundPaymentSchema } from "@/lib/validation/order";
 import { paymentMethodLabel, paymentStatusLabel } from "@/lib/display";
 import { newIdempotencyKey } from "@/lib/utils";
+import { roundMoney } from "@/lib/validation/money";
 import type { PaymentMethod } from "@/lib/types/database.types";
 import { recordPaymentAction, refundPaymentAction } from "../actions";
 
@@ -42,7 +43,15 @@ export function PaymentDialogs({
 
   function open(next: "payment" | "refund") {
     keyRef.current = newIdempotencyKey();
-    setAmount(next === "payment" ? (balance > 0 ? balance.toFixed(2) : "") : netPaid > 0 ? netPaid.toFixed(2) : "");
+    setAmount(
+      next === "payment"
+        ? balance > 0
+          ? roundMoney(balance).toFixed(2)
+          : ""
+        : netPaid > 0
+          ? roundMoney(netPaid).toFixed(2)
+          : "",
+    );
     setMethod(defaultMethod);
     setReference("");
     setError(null);
@@ -134,7 +143,7 @@ export function PaymentDialogs({
             htmlFor="payment-amount"
             required
             error={error}
-            hint={isPayment ? `Outstanding balance ${balance.toFixed(2)}` : undefined}
+            hint={isPayment ? `Outstanding balance ${roundMoney(balance).toFixed(2)}` : undefined}
           >
             <Input
               id="payment-amount"

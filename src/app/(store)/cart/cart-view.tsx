@@ -14,7 +14,7 @@ import {
   type CartDrift,
   type CartLineLive,
 } from "@/lib/store/cart";
-import { formatINR } from "@/lib/validation/money";
+import { formatINR, multiplyMoney } from "@/lib/validation/money";
 import { loadCartLiveAction } from "@/app/(store)/cart/actions";
 import { ProductImage } from "@/components/store/product-card";
 
@@ -212,7 +212,7 @@ export function CartView({ shippingFee }: { shippingFee: number }) {
                 </div>
 
                 <p className="shrink-0 text-sm font-semibold">
-                  {formatINR(line.unitPrice * line.quantity)}
+                  {formatINR(multiplyMoney(line.unitPrice, line.quantity))}
                 </p>
               </li>
             );

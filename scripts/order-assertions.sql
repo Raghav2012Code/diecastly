@@ -920,6 +920,109 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- 12. v_sales_daily reports UNITS, and a range over it excludes other days.
+--
+--     getSalesTotals() was returning a LIFETIME unit count inside a ranged result,
+--     because v_product_profit has no date dimension at all. The dashboard read
+--     "Today" above that number. v_sales_daily now carries units_sold, so units
+--     and money come from one range-scoped source and cannot disagree about which
+--     orders are in scope.
+--
+--     Three claims, each with something that would make it false:
+--       a. a day's units equal the summed line quantities of that day's live
+--          orders - a control sale on the same day fixes the expected value, so
+--          this cannot pass by returning zero for everything.
+--       b. a CANCELLED order contributes no units. This is the assertion that
+--          catches a units column added without the status filter, which is the
+--          whole exclusion rule the reporting views exist to hold.
+--       c. a range covering one day returns that day's units and not another's.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_today      date := (now() at time zone 'Asia/Kolkata')::date;
+  v_yesterday  date := (now() at time zone 'Asia/Kolkata')::date - 1;
+  v_order_today uuid;
+  v_order_old   uuid;
+  v_units_today integer;
+  v_units_range integer;
+  v_units_yest  integer;
+  v_expected    integer;
+begin
+  -- Two sales on two different days, so a range has something to exclude.
+  select public.record_in_person_sale(
+    '[{"productId":"23000000-0000-0000-0000-000000000003","quantity":2,"unitPrice":100}]'::jsonb,
+    'cash'::public.payment_method, null, null, null, 'asrt-units-today'::text
+  ) ->> 'order_id' into v_order_today;
+
+  select public.record_in_person_sale(
+    '[{"productId":"23000000-0000-0000-0000-000000000003","quantity":3,"unitPrice":100}]'::jsonb,
+    'cash'::public.payment_method, null, null, null, 'asrt-units-yesterday'::text
+  ) ->> 'order_id' into v_order_old;
+
+  -- created_at is what v_sales_daily groups by, so ageing the order is what
+  -- moves it to another IST day. A direct table write, as section 11 also does:
+  -- no RPC sets a backdated created_at, and this is a fixture, not a claim about
+  -- application behaviour.
+  update public.orders set created_at = now() - interval '1 day' where id = v_order_old;
+
+  -- (a) A control: today's day has at least this order's 2 units in it, plus
+  -- whatever earlier sections of this file legitimately sold that day.
+  select coalesce(sum(units_sold), 0)::integer into v_units_today
+    from public.v_sales_daily where sale_date = v_today;
+  select coalesce(sum(oi.quantity), 0)::integer into v_expected
+    from public.order_items oi
+    join public.orders o on o.id = oi.order_id
+   where (o.created_at at time zone 'Asia/Kolkata')::date = v_today
+     and o.status not in ('cancelled', 'returned');
+
+  if v_units_today <> v_expected then
+    raise exception 'FAIL v_sales_daily units for % is %, expected %',
+      v_today, v_units_today, v_expected;
+  end if;
+  if v_expected < 2 then
+    raise exception 'FAIL control: expected at least 2 units today, got %', v_expected;
+  end if;
+
+  -- (c) The range excludes the other day. The old defect returned a lifetime
+  -- total here, so this is the assertion that would have caught it.
+  select coalesce(sum(units_sold), 0)::integer into v_units_range
+    from public.v_sales_daily where sale_date between v_today and v_today;
+  select coalesce(sum(units_sold), 0)::integer into v_units_yest
+    from public.v_sales_daily where sale_date = v_yesterday;
+
+  if v_units_range <> v_units_today then
+    raise exception 'FAIL a single-day range returned % units, expected %',
+      v_units_range, v_units_today;
+  end if;
+  if v_units_yest < 3 then
+    raise exception 'FAIL control: the backdated order is not on % at all', v_yesterday;
+  end if;
+
+  -- (b) A cancelled order contributes nothing. Without the status filter on the
+  -- view this returns 2 rather than 0.
+  perform public.cancel_order(v_order_today, 'units check', true, true, null);
+  if (select status from public.orders where id = v_order_today) <> 'cancelled' then
+    raise exception 'FAIL control: the units order was not cancellable';
+  end if;
+
+  select coalesce(sum(units_sold), 0)::integer into v_units_today
+    from public.v_sales_daily where sale_date = v_today;
+  select coalesce(sum(oi.quantity), 0)::integer into v_expected
+    from public.order_items oi
+    join public.orders o on o.id = oi.order_id
+   where (o.created_at at time zone 'Asia/Kolkata')::date = v_today
+     and o.status not in ('cancelled', 'returned');
+
+  if v_units_today <> v_expected then
+    raise exception 'FAIL a cancelled order still contributed units: view says %, live orders say %',
+      v_units_today, v_expected;
+  end if;
+
+  raise notice 'PASS v_sales_daily reports range-scoped units and excludes cancelled orders';
+end
+$$;
+
 -- RAISE NOTICE is invisible in single-user mode; the success signal is a SELECT
 -- because single-user echoes result rows to stdout.
 select 'ALL ASSERTIONS PASSED' as result;

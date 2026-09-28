@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useCart } from "@/lib/store/cart-context";
 import { cartSubtotal, cartTotal, type CartLineLive } from "@/lib/store/cart";
-import { formatINR } from "@/lib/validation/money";
+import { formatINR, multiplyMoney } from "@/lib/validation/money";
 import { placeOrderAction, type CheckoutResult } from "@/app/(store)/checkout/actions";
 import { loadCartLiveAction } from "@/app/(store)/cart/actions";
 import { newIdempotencyKey } from "@/lib/utils";
@@ -301,7 +301,7 @@ export function CheckoutForm({
                 <span className="text-muted-foreground"> × {line.quantity}</span>
               </span>
               <span className="shrink-0 tabular-nums">
-                {formatINR(line.unitPrice * line.quantity)}
+                {formatINR(multiplyMoney(line.unitPrice, line.quantity))}
               </span>
             </li>
           ))}

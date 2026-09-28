@@ -16,6 +16,7 @@ import {
   type CartLine,
   type CartLineLive,
 } from "@/lib/store/cart";
+import { addMoney, multiplyMoney } from "@/lib/validation/money";
 
 const PID = "11111111-1111-1111-1111-111111111111";
 const PID2 = "22222222-2222-2222-2222-222222222222";
@@ -145,6 +146,29 @@ describe("cart money", () => {
     // accumulated by repeated float addition.
     const lines = [line({ quantity: 2, unitPrice: 250.005 }), line({ productId: PID2, quantity: 1, unitPrice: 0.01 })];
     expect(cartSubtotal(lines)).toBe(500.02);
+  });
+
+  it("the per-line figures the UI prints sum to the printed subtotal", () => {
+    // The cart and checkout line items each rendered `line.unitPrice *
+    // line.quantity` by hand while the subtotal on the same page went through
+    // `multiplyMoney` + `addMoney`. `store/cart.ts` states the rule: "every total
+    // goes through money.ts; hand-rolled * or + on a price is a defect".
+    //
+    // To be precise about what this does and does not fix: there is no
+    // user-visible divergence here, because `formatINR` rounds to two decimals for
+    // display, so a raw product and a rounded one render identically. What the
+    // change removes is a second, unrounded definition of a line amount living
+    // next to the first — which is how the next change to `roundMoney` would have
+    // quietly made the page disagree with itself. So this asserts the property
+    // that must hold, rather than pretending a difference was observed.
+    const lines = [
+      line({ quantity: 3, unitPrice: 33.335 }),
+      line({ productId: PID2, quantity: 7, unitPrice: 0.145 }),
+      line({ productId: "30000000-0000-0000-0000-000000000003", quantity: 11, unitPrice: 1.005 }),
+    ];
+
+    const displayed = lines.map((l) => multiplyMoney(l.unitPrice, l.quantity));
+    expect(addMoney(...displayed)).toBe(cartSubtotal(lines));
   });
 
   it("is zero for an empty cart", () => {

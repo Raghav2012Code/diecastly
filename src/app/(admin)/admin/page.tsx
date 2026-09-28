@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { getDashboardKpis, getInventoryValue, getLowStock, todayIst } from "@/lib/reports/data";
+import { getDashboardKpis, getInventoryValue, getLowStock, getLowStockCounts, todayIst } from "@/lib/reports/data";
 import { formatINR } from "@/lib/validation/money";
 import { formatDateIST } from "@/lib/dates";
 
@@ -27,9 +27,10 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
   const day = todayIst();
-  const [kpis, stock, inventory] = await Promise.all([
+  const [kpis, stock, counts, inventory] = await Promise.all([
     getDashboardKpis(day),
     getLowStock(8),
+    getLowStockCounts(),
     getInventoryValue(),
   ]);
 
@@ -47,6 +48,13 @@ export default async function AdminDashboardPage() {
 
   const k = kpis.data;
   const money = (value: number) => formatINR(value);
+
+  // Advisory, so a failure degrades to no badge rather than taking the page down
+  // — the same call admin/layout.tsx makes on this number. `getDashboardKpis`
+  // used to read it itself and return its failure, which suppressed revenue,
+  // orders, profit and contribution along with it.
+  const lowStockCount = counts.ok ? counts.data.lowStock : 0;
+  const outOfStockCount = counts.ok ? counts.data.outOfStock : 0;
 
   return (
     <div className="space-y-6">
@@ -85,15 +93,23 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex gap-2">
-              <Badge tone={k.outOfStockCount > 0 ? "danger" : "neutral"}>
-                {k.outOfStockCount} out of stock
+              <Badge tone={outOfStockCount > 0 ? "danger" : "neutral"}>
+                {outOfStockCount} out of stock
               </Badge>
-              <Badge tone={k.lowStockCount > 0 ? "warning" : "neutral"}>
-                {k.lowStockCount} running low
+              <Badge tone={lowStockCount > 0 ? "warning" : "neutral"}>
+                {lowStockCount} running low
               </Badge>
             </div>
 
-            {stock.ok && stock.data.length > 0 ? (
+            {!stock.ok ? (
+              <p className="text-sm text-muted-foreground">
+                Stock levels could not be loaded.{" "}
+                <Link href="/admin/inventory?scope=low" className="underline underline-offset-4">
+                  Try the inventory page
+                </Link>
+                .
+              </p>
+            ) : stock.data.length > 0 ? (
               <ul className="divide-y divide-border text-sm">
                 {stock.data.map((row) => (
                   <li key={row.product_id} className="flex items-center justify-between gap-2 py-1.5">

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PAYMENT_METHODS } from "@/lib/types/database.types";
-import { clampLineDiscount } from "@/lib/validation/money";
+import { MAX_MONEY } from "@/lib/validation/catalog";
+import { clampLineDiscount, roundMoney } from "@/lib/validation/money";
 
 export { PAYMENT_METHODS };
 
@@ -14,6 +15,19 @@ const idempotencyKeySchema = z.string().min(8).max(100);
 /**
  * POS line. v1 requires a strictly positive unit price: zero-value lines are
  * not allowed. Mirrored by a database CHECK (unit_price > 0).
+ *
+ * The `unitPrice` ceiling and the `line_total` refinement are D53: the shared
+ * validation layer may not be looser than the column it feeds. `line_total` is a
+ * generated `numeric(12,2)` of `unit_price * quantity - line_discount`, and
+ * `numeric(12,2)` tops out at 9,999,999,999.99 — so a price inside the column
+ * limit multiplied by a large enough quantity still overflows it. Without these
+ * two, an admin entering 99,999,999,999.99 at the till passed Zod and failed at
+ * the database with SQLSTATE 22003, which `describeDbError` has no branch for,
+ * so the message was the generic "Something went wrong" rather than "that amount
+ * is too large".
+ *
+ * The refinement states the column's actual rule rather than inventing a quantity
+ * ceiling, so it cannot drift from the schema the way an arbitrary cap would.
  */
 export const posLineSchema = z
   .object({
@@ -21,8 +35,13 @@ export const posLineSchema = z
     quantity: z.number().int().positive(),
     unitPrice: z
       .number()
-      .positive({ message: "Unit price must be greater than zero" }),
+      .positive({ message: "Unit price must be greater than zero" })
+      .max(MAX_MONEY, "That price is too large."),
     lineDiscount: z.number().min(0).default(0),
+  })
+  .refine((line) => roundMoney(line.unitPrice * line.quantity) <= MAX_MONEY, {
+    message: "That line total is too large.",
+    path: ["quantity"],
   })
   .transform((line) => ({
     ...line,

@@ -677,7 +677,7 @@ export function PosScreen({
                   min="0"
                   step="0.01"
                   inputMode="decimal"
-                  value={receivedTouched ? receivedInput : total.toFixed(2)}
+                  value={receivedTouched ? receivedInput : roundMoney(total).toFixed(2)}
                   onChange={(event) => {
                     setReceivedTouched(true);
                     setReceivedInput(event.target.value);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ZodError } from "zod";
 import { MANUAL_MOVEMENT_TYPES } from "@/lib/types/database.types";
-import { lowStockThresholdSchema } from "@/lib/validation/catalog";
+import { lowStockThresholdSchema, MAX_MONEY } from "@/lib/validation/catalog";
 
 /**
  * Shared inventory schemas. Quantities are strictly positive integers; a stock
@@ -15,8 +15,22 @@ export const optionalNote = z
   .preprocess(emptyToUndefined, z.string().trim().max(500).optional())
   .transform((value) => value ?? null);
 
+/**
+ * The cost recorded against a stock movement, and optionally written back to
+ * `products.purchase_cost`. D53: the ceiling is the column's, not an arbitrary
+ * one. Without it a restock cost of 99,999,999,999.99 passed Zod and failed at
+ * the database with SQLSTATE 22003, which `describeDbError` does not map, so the
+ * admin saw the generic failure instead of "that amount is too large".
+ */
 export const optionalUnitCost = z
-  .preprocess(emptyToUndefined, z.coerce.number().nonnegative("Cost cannot be negative.").optional())
+  .preprocess(
+    emptyToUndefined,
+    z.coerce
+      .number()
+      .nonnegative("Cost cannot be negative.")
+      .max(MAX_MONEY, "That amount is too large.")
+      .optional(),
+  )
   .transform((value) => value ?? null);
 
 export const movementReasonSchema = z.enum(MANUAL_MOVEMENT_TYPES);

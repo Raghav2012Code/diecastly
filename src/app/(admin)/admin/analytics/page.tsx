@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { buttonVariants } from "@/components/ui/button";
 import { getChannelSplit, getProductProfit, shiftIstDate, todayIst } from "@/lib/reports/data";
+import { addMoney } from "@/lib/validation/money";
 import { formatINR, roundMoney } from "@/lib/validation/money";
 
 export const metadata: Metadata = { title: "Analytics" };
@@ -45,9 +46,13 @@ export default async function AnalyticsPage() {
     );
   }
 
-  const rows = profit.data;
+  const rows = profit.data.rows;
   const channels = split.data;
-  const totalRevenue = channels.reduce((sum, row) => sum + row.revenue, 0);
+  // addMoney, not `sum + row.revenue`: these are numeric(12,2) values that have
+  // already crossed into JavaScript floats, and repeated addition accumulates
+  // binary representation error. This figure sits directly beside the channel
+  // table it is derived from, so a one-paisa disagreement would be visible.
+  const totalRevenue = addMoney(...channels.map((row) => row.revenue));
   const totalUnits = rows.reduce((sum, row) => sum + row.units_sold, 0);
 
   return (
@@ -72,7 +77,9 @@ export default async function AnalyticsPage() {
             <CardTitle className="text-2xl">{rows.length}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {totalUnits} units in total
+            {profit.data.capped
+              ? `Top ${rows.length} by profit — more have sold, and ${totalUnits} units is a partial total`
+              : `${totalUnits} units in total`}
           </CardContent>
         </Card>
         <Card>

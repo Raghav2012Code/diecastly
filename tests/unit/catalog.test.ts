@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   categoryInputSchema,
+  MAX_MONEY,
   moneyField,
   productCreateSchema,
   productInputSchema,
   supplierInputSchema,
   slugify,
 } from "@/lib/validation/catalog";
-import { thresholdSchema } from "@/lib/validation/inventory";
+import { optionalUnitCost, thresholdSchema } from "@/lib/validation/inventory";
+import { posLineSchema } from "@/lib/validation/order";
 
 describe("product validation", () => {
   it("accepts a minimal product and applies safe defaults", () => {
@@ -157,5 +159,64 @@ describe("lowStockThreshold", () => {
     expect(productInputSchema.shape.lowStockThreshold.safeParse(100_000).success).toBe(true);
     expect(productInputSchema.shape.lowStockThreshold.safeParse(-1).success).toBe(false);
     expect(productInputSchema.shape.lowStockThreshold.safeParse(1.5).success).toBe(false);
+  });
+});
+
+describe("D53: no money field is looser than the numeric(12,2) it feeds", () => {
+  // These three all fed numeric(12,2) columns and all three accepted values the
+  // database rejects. The symptom was always the same: validation passed, the
+  // write failed with SQLSTATE 22003, and `describeDbError` has no branch for
+  // 22003, so the admin saw the generic fallback instead of a range message.
+  //
+  // `moneyField` is the reference implementation, and it is the ceiling the other
+  // two are compared against rather than a hard-coded number repeated here.
+  const at = (value: number) => moneyField("x").safeParse(value).success;
+
+  it("moneyField accepts up to the column limit and refuses beyond it", () => {
+    expect(at(MAX_MONEY)).toBe(true);
+    expect(at(MAX_MONEY + 0.01)).toBe(false);
+  });
+
+  it("the POS unit price agrees with moneyField", () => {
+    const pos = (value: number) =>
+      posLineSchema.safeParse({
+        productId: "10000000-0000-0000-0000-000000000001",
+        quantity: 1,
+        unitPrice: value,
+      }).success;
+
+    for (const value of [1, 250, 1000, MAX_MONEY, MAX_MONEY + 0.01, 1e12]) {
+      expect(pos(value), `POS unit price disagreed at ${String(value)}`).toBe(at(value));
+    }
+  });
+
+  it("a restock cost agrees with moneyField", () => {
+    const cost = (value: number) => optionalUnitCost.safeParse(value).success;
+    for (const value of [0, 1, 250, MAX_MONEY, MAX_MONEY + 0.01, 1e12]) {
+      expect(cost(value), `restock cost disagreed at ${String(value)}`).toBe(at(value));
+    }
+  });
+
+  // A unit price inside the column limit multiplied by a large quantity still
+  // overflows `line_total`, which is a generated numeric(12,2) of
+  // unit_price * quantity - line_discount. A per-field ceiling cannot catch that,
+  // so the line carries its own refinement.
+  it("refuses a line whose total would overflow the column", () => {
+    const line = (unitPrice: number, quantity: number) =>
+      posLineSchema.safeParse({
+        productId: "10000000-0000-0000-0000-000000000001",
+        quantity,
+        unitPrice,
+      }).success;
+
+    expect(line(250, 4)).toBe(true);
+    // The exact boundary: one unit at the column limit fits, two do not.
+    expect(line(MAX_MONEY, 1)).toBe(true);
+    expect(line(MAX_MONEY, 2)).toBe(false);
+    // A modest price times a large quantity overflows too — 20,000 x 1,000,000 is
+    // 2e10, well past the 9,999,999,999.99 ceiling, even though each factor is
+    // comfortably inside it. (9,999 x 1,000,000 is 9.999e9 and does NOT overflow,
+    // which is the trap in writing this by eye.)
+    expect(line(20_000, 1_000_000)).toBe(false);
   });
 });

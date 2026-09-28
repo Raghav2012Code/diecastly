@@ -52,12 +52,11 @@ export function shiftIstDate(isoDay: string, days: number): string {
   return base.toISOString().slice(0, 10);
 }
 
-// getProductProfit is a hoisted function declaration, so getSalesTotals below can
-// call it even though it is defined further down this file.
 export type SalesRow = {
   sale_date: string;
   channel: OrderChannel;
   orders_count: number;
+  units_sold: number;
   item_revenue: number;
   shipping_revenue: number;
   revenue: number;
@@ -100,17 +99,23 @@ export async function getSalesTotals(
 
   const rows = (data ?? []) as SalesRow[];
 
-  // Units come from v_product_profit, not from v_sales_daily. The daily view
-  // counts ORDERS, and labelling that "units sold" would overstate every
-  // multi-item order by its line count. The profit view sums order_items.quantity
-  // and already excludes cancelled and returned orders, so it agrees with every
-  // other figure here.
-  const units = await getProductProfit(500);
-  if (!units.ok) return units;
-
+  // Units come from the same rows as every money figure, so the range applies to
+  // them automatically.
+  //
+  // This used to sum `getProductProfit(500)`, which has no date dimension at all —
+  // `v_product_profit` groups by product only — so it returned a LIFETIME unit
+  // count inside a range-scoped result. The dashboard rendered it under a header
+  // reading "Today", and /admin/sales printed it beneath a from/to header, with
+  // nothing to reconcile the two because every other figure was range-scoped.
+  //
+  // D61 moved units off `v_sales_daily` because that view counted ORDERS, and
+  // calling an order count "units" overstates every multi-item order by its line
+  // count. The view now reports both, so the two can no longer disagree about
+  // which orders are in scope. `getProductProfit` still exists for the Analytics
+  // best-sellers table, which is correctly a lifetime ranking.
   return ok({
     ordersCount: rows.reduce((total, row) => total + row.orders_count, 0),
-    unitsSold: units.data.reduce((total, row) => total + row.units_sold, 0),
+    unitsSold: rows.reduce((total, row) => total + row.units_sold, 0),
     itemRevenue: addMoney(...rows.map((row) => row.item_revenue)),
     shippingRevenue: addMoney(...rows.map((row) => row.shipping_revenue)),
     revenue: addMoney(...rows.map((row) => row.revenue)),
@@ -124,7 +129,7 @@ export async function getSalesTotals(
 export async function getSalesSeries(
   fromDay: string,
   toDay: string,
-): Promise<Result<{ day: string; revenue: number; grossProfit: number; orders: number }[]>> {
+): Promise<Result<{ day: string; revenue: number; grossProfit: number; orders: number; units: number }[]>> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("v_sales_daily")
@@ -135,14 +140,17 @@ export async function getSalesSeries(
 
   if (error) return fail(error);
 
-  const byDay = new Map<string, { revenue: number; grossProfit: number; orders: number }>();
+  // Units ride along per day so the sales CSV reconciles against the totals row
+  // without the reader having to re-derive them. Integer, so it needs no rounding.
+  const byDay = new Map<string, { revenue: number; grossProfit: number; orders: number; units: number }>();
   for (const row of (data ?? []) as SalesRow[]) {
-    const existing = byDay.get(row.sale_date) ?? { revenue: 0, grossProfit: 0, orders: 0 };
+    const existing = byDay.get(row.sale_date) ?? { revenue: 0, grossProfit: 0, orders: 0, units: 0 };
     byDay.set(row.sale_date, {
       // accumulate as arrays then round once, for the same reason as above
       revenue: existing.revenue + row.revenue,
       grossProfit: existing.grossProfit + row.gross_profit,
       orders: existing.orders + row.orders_count,
+      units: existing.units + row.units_sold,
     });
   }
 
@@ -154,6 +162,7 @@ export async function getSalesSeries(
       revenue: roundMoney(value.revenue),
       grossProfit: roundMoney(value.grossProfit),
       orders: value.orders,
+      units: value.units,
     })),
   );
 }
@@ -167,19 +176,38 @@ export type ProductProfitRow = {
   gross_profit: number;
 };
 
+/** Hard ceiling on the best-sellers read, so a typo cannot ask for the world. */
+const MAX_PRODUCT_PROFIT_ROWS = 500;
+
+export type ProductProfitResult = {
+  rows: ProductProfitRow[];
+  /**
+   * True when the read hit `MAX_PRODUCT_PROFIT_ROWS` and there may be more.
+   *
+   * This used to be silent, so the Analytics page labelled `rows.length` as
+   * "Products sold" — a truncated count presented as a total — and the CSV export
+   * shipped a partial file under a complete-looking filename. `listSellableProducts`
+   * already returned `capped` for exactly this reason and the POS says so on
+   * screen; this brings the same honesty to the reporting side.
+   */
+  capped: boolean;
+};
+
 /** Best sellers by profit, for the analytics page and the CSV export. */
 export async function getProductProfit(
   limit = 50,
-): Promise<Result<ProductProfitRow[]>> {
+): Promise<Result<ProductProfitResult>> {
+  const cap = Math.min(MAX_PRODUCT_PROFIT_ROWS, Math.max(1, Math.trunc(limit)));
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("v_product_profit")
     .select("*")
     .order("gross_profit", { ascending: false })
-    .limit(Math.min(500, Math.max(1, Math.trunc(limit))));
+    .limit(cap);
 
   if (error) return fail(error);
-  return ok((data ?? []) as ProductProfitRow[]);
+  const rows = (data ?? []) as ProductProfitRow[];
+  return ok({ rows, capped: rows.length >= MAX_PRODUCT_PROFIT_ROWS });
 }
 
 export type StockRow = {
@@ -208,6 +236,43 @@ export async function getLowStock(limit = 50): Promise<Result<StockRow[]>> {
 
   if (error) return fail(error);
   return ok((data ?? []) as StockRow[]);
+}
+
+export type LowStockCounts = { outOfStock: number; lowStock: number };
+
+/**
+ * Totals for the "needs attention" badges.
+ *
+ * A separate read from the list on purpose. Deriving the counts from the rows
+ * already fetched would label them with the list's own limit — the dashboard
+ * shows the top 8, so "3 out of stock" would really mean "3 of the 8 I happened
+ * to load". These are `head: true` count queries, so no rows come back and the
+ * number is the real total however many products are affected.
+ *
+ * Sold-out products are excluded from `lowStock`, because "0 in stock" is a
+ * different problem from "running low" and mixing them makes one badge mean two
+ * things.
+ */
+export async function getLowStockCounts(): Promise<Result<LowStockCounts>> {
+  const supabase = await createClient();
+  const [out, low] = await Promise.all([
+    supabase
+      .from("v_product_stock")
+      .select("product_id", { count: "exact", head: true })
+      .eq("status", "active")
+      .eq("is_out_of_stock", true),
+    supabase
+      .from("v_product_stock")
+      .select("product_id", { count: "exact", head: true })
+      .eq("status", "active")
+      .eq("is_low_stock", true)
+      .eq("is_out_of_stock", false),
+  ]);
+
+  if (out.error) return fail(out.error);
+  if (low.error) return fail(low.error);
+
+  return ok({ outOfStock: out.count ?? 0, lowStock: low.count ?? 0 });
 }
 
 export type ChannelSplit = { channel: OrderChannel; revenue: number; orders: number };
@@ -246,20 +311,27 @@ export async function getChannelSplit(
 
 export type DashboardKpis = SalesTotals & {
   openOrders: number;
-  lowStockCount: number;
-  outOfStockCount: number;
 };
 
 /**
- * The dashboard's numbers.
+ * The dashboard's money figures.
  *
  * "Today" is an IST day, matching how the seller reads their own business, and
  * the range is today only — not "last 30 days" presented as if it were today.
+ *
+ * Low-stock counts are deliberately NOT read here. This used to fetch them
+ * alongside, and returning its failure took the whole dashboard down with it —
+ * revenue, orders, profit and contribution all disappeared because an advisory
+ * badge could not be read. The admin layout already makes the opposite call on
+ * the same query and says why: "A failure is not fatal: the admin simply gets no
+ * badge, which is the right degradation for a number that informs rather than
+ * gates." The page derives the counts from the list it already reads, so the
+ * badges and the list below them also come from one snapshot instead of two
+ * queries that can disagree.
  */
 export async function getDashboardKpis(day = todayIst()): Promise<Result<DashboardKpis>> {
-  const [today, low] = await Promise.all([getSalesTotals(day, day), getLowStock(200)]);
+  const today = await getSalesTotals(day, day);
   if (!today.ok) return today;
-  if (!low.ok) return low;
 
   const supabase = await createClient();
   const { count, error } = await supabase
@@ -272,8 +344,6 @@ export async function getDashboardKpis(day = todayIst()): Promise<Result<Dashboa
   return ok({
     ...today.data,
     openOrders: count ?? 0,
-    lowStockCount: low.data.filter((row) => row.is_low_stock && !row.is_out_of_stock).length,
-    outOfStockCount: low.data.filter((row) => row.is_out_of_stock).length,
   });
 }
 

@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { fromZod, type ActionResult } from "@/lib/action-result";
+import { fromZod, fromFriendly, type ActionResult } from "@/lib/action-result";
+import { fail } from "@/lib/db/errors";
 import { settingsInputSchema } from "@/lib/validation/settings";
 
 /**
@@ -43,7 +44,15 @@ export async function saveSettingsAction(input: unknown): Promise<ActionResult<n
     .eq("id", true);
 
   if (error) {
-    return { ok: false, error: "The settings could not be saved. Please try again." };
+    // `fail`/`describeDbError`, not a hand-written string. D55: the translator is
+    // the path for a *database* error, because it recognises SQLSTATEs,
+    // constraint names and mapped tokens; `failWith` is only for failures this
+    // application has already diagnosed. This used to return a fixed sentence for
+    // every possible cause, so a CHECK violation on `business_email` or on
+    // `online_order_hold_hours` produced the same opaque message with no field to
+    // attach it to — the exact defect D55 fixed for `uniqueSlug`, in the one
+    // remaining place that still did it.
+    return fromFriendly(fail(error).error);
   }
 
   revalidatePath("/admin/settings");

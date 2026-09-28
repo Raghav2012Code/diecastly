@@ -29,10 +29,22 @@ export async function GET() {
     });
   }
 
-  const rows = profit.data.map((row) => ({
+  const rows = profit.data.rows.map((row) => ({
     ...row,
     margin: row.item_revenue > 0 ? (row.gross_profit / row.item_revenue) * 100 : null,
   }));
+
+  // A truncated export is worse than a failed one: a partial file under a
+  // complete-looking filename reconciles against nothing and the reader has no
+  // way to tell. D64 already returns a 503 rather than a CSV of nothing, and this
+  // is the same principle for "a CSV of some of it".
+  if (profit.data.capped) {
+    return new NextResponse(
+      "The report is too large to export in full — more products have sold than the " +
+        "export includes. Narrow the range or raise the export limit.\n",
+      { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
+    );
+  }
 
   const csv = toCsv(
     rows,

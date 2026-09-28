@@ -49,6 +49,7 @@ export async function GET(request: Request) {
     [
       { header: "Date", value: (row) => row.day },
       { header: "Orders", value: (row) => row.orders },
+      { header: "Units", value: (row) => row.units },
       { header: "Revenue", value: (row) => row.revenue },
       { header: "Gross profit", value: (row) => row.grossProfit },
     ],
@@ -57,12 +58,35 @@ export async function GET(request: Request) {
 
   // A totals row, so the file reconciles without the reader having to sum it.
   // A leading blank-ish label keeps it distinguishable from a data row.
-  const totalsRow = [
-    `"TOTAL ${fromDay} to ${toDay}"`,
-    String(t.ordersCount),
-    t.revenue.toFixed(2),
-    t.grossProfit.toFixed(2),
-  ].join(",");
+  //
+  // Built through the same `toCsv`/`escapeField` path as every other field rather
+  // than hand-joined. A hand-joined row skipped the formula defusal, and a
+  // negative gross profit emits "-123.45" — a leading "-", which is exactly the
+  // character class `FORMULA_START` exists to neutralise. Money also went out
+  // through `toFixed` instead of `roundMoney`.
+  const totalsRow = toCsv(
+    [
+      {
+        label: `TOTAL ${fromDay} to ${toDay}`,
+        orders: t.ordersCount,
+        units: t.unitsSold,
+        revenue: t.revenue,
+        grossProfit: t.grossProfit,
+      },
+    ],
+    [
+      { header: "Date", value: (row) => row.label },
+      { header: "Orders", value: (row) => row.orders },
+      { header: "Units", value: (row) => row.units },
+      { header: "Revenue", value: (row) => row.revenue },
+      { header: "Gross profit", value: (row) => row.grossProfit },
+    ],
+    { moneyColumns: ["Revenue", "Gross profit"] },
+  )
+    // `toCsv` always emits a header; the totals row must not repeat it.
+    .split("\r\n")
+    .slice(1)
+    .join("\r\n");
 
 // A leading BOM. Without it Excel opens the file in the local code page and
 // mangles any non-ASCII character in a product or customer name, which for a
