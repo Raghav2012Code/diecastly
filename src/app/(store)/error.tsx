@@ -27,15 +27,15 @@ export default function StoreError({
   }, [error]);
 
   return (
-    <div className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center gap-5 px-6 text-center">
+    <div className="mx-auto max-w-3xl px-6 py-10">
       <h1 className="font-display text-2xl font-extrabold tracking-tight">
         This page could not be loaded
       </h1>
-      <p className="max-w-prose text-sm text-muted-foreground">
+      <p className="mt-2 max-w-prose text-sm text-muted-foreground">
         Something went wrong on our side, not yours. You can try again, or head back to the
         catalog.
       </p>
-      <div className="flex flex-wrap items-center justify-center gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <button type="button" onClick={reset} className={buttonVariants()}>
           Try again
         </button>

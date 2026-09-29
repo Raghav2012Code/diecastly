@@ -142,7 +142,7 @@ export function OrderDetailView({
                     <TableCell
                       className={cn(
                         "tnum text-right",
-                        item.line_profit < 0 ? "text-destructive" : "text-success",
+                        item.line_profit < 0 ? "text-destructive-text" : "text-success-text",
                       )}
                     >
                       {formatINR(item.line_profit)}

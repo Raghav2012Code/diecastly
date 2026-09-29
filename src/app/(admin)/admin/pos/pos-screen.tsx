@@ -383,7 +383,7 @@ export function PosScreen({
       <div className="space-y-5">
         <header className="no-print flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-success/15 text-success">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-success/15 text-success-text">
               <Check className="h-5 w-5" />
             </span>
             <div>
@@ -518,9 +518,9 @@ export function PosScreen({
                             className={cn(
                               "tnum block text-[11px]",
                               soldOut
-                                ? "text-destructive"
+                                ? "text-destructive-text"
                                 : low
-                                  ? "text-warning"
+                                  ? "text-warning-text"
                                   : "text-muted-foreground",
                             )}
                           >

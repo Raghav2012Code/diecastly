@@ -23,7 +23,7 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 function Delta({ value }: { value: number }) {
   const positive = value > 0;
   return (
-    <span className={cn("tnum font-medium", positive ? "text-success" : "text-foreground")}>
+    <span className={cn("tnum font-medium", positive ? "text-success-text" : "text-foreground")}>
       {positive ? `+${value}` : value}
     </span>
   );

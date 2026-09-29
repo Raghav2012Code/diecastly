@@ -16,13 +16,13 @@
     --background: 75 9% 94%;
     --foreground: 210 8% 10%;
 
-    --card: 0 0% 100%;
+    --card: 75 12% 97%;
     --card-foreground: 210 8% 10%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 210 8% 10%;
 
-    --primary: 21 90% 48%;
+    --primary: 21 90% 40%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 75 8% 90%;
@@ -36,16 +36,25 @@
 
     --destructive: 4 72% 41%;
     --destructive-foreground: 0 0% 100%;
+    /* Darker step for badge/body text on the destructive tint (A3). */
+    --destructive-text: 4 72% 37%;
 
     --success: 147 45% 32%;
     --success-foreground: 0 0% 100%;
+    /* Badge/body text on the success tint — the fill is the status colour,
+       the text is a darker step so it clears 4.5:1 on bg-success/10 (A3). */
+    --success-text: 147 45% 25%;
 
     --warning: 33 100% 33%;
     --warning-foreground: 0 0% 100%;
+    /* Same split for warning (A3), plus the light-on-dark value for the
+       petrol sidebar badge, which must stand alone from the global (A2). */
+    --warning-text: 33 100% 26%;
+    --warning-on-dark: 38 100% 62%;
 
     --border: 90 5% 84%;
     --input: 90 5% 76%;
-    --ring: 21 90% 48%;
+    --ring: 21 90% 40%;
 
     --petrol: 187 62% 15%;
     --petrol-foreground: 75 9% 94%;
@@ -57,50 +66,6 @@
     --receipt-line: 44 12% 86%;
 
     --radius: 0.25rem;
-  }
-
-  .dark {
-    --background: 200 13% 8%;
-    --foreground: 75 9% 94%;
-
-    --card: 200 14% 11%;
-    --card-foreground: 75 9% 94%;
-
-    --popover: 200 14% 11%;
-    --popover-foreground: 75 9% 94%;
-
-    --primary: 21 90% 55%;
-    --primary-foreground: 200 13% 8%;
-
-    --secondary: 200 10% 16%;
-    --secondary-foreground: 75 9% 94%;
-
-    --muted: 200 10% 16%;
-    --muted-foreground: 210 8% 64%;
-
-    --accent: 187 30% 20%;
-    --accent-foreground: 75 9% 94%;
-
-    --destructive: 4 70% 55%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 147 40% 48%;
-    --success-foreground: 200 13% 8%;
-
-    --warning: 35 90% 55%;
-    --warning-foreground: 200 13% 8%;
-
-    --border: 200 8% 22%;
-    --input: 200 8% 28%;
-    --ring: 21 90% 55%;
-
-    --petrol: 187 40% 10%;
-    --petrol-foreground: 75 9% 94%;
-
-    --receipt: 44 24% 95%;
-    --receipt-foreground: 210 8% 10%;
-    --receipt-muted: 45 8% 32%;
-    --receipt-line: 44 10% 78%;
   }
 }
 

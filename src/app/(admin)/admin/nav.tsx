@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
  * "Desktop-first" is a statement about density, not about being unusable on a
  * small screen, and a missing nav is an omission rather than a design choice.
  *
- * `badges` carries the low-stock count onto the Inventory item. It comes from the
+ * `lowStockCount` carries the low-stock count onto the Inventory item. It comes from the
  * server as a plain number so the nav stays a client component, and it is
  * optional so the preview harness and the login-adjacent states can omit it.
  */
@@ -73,7 +73,10 @@ export function AdminNav({
                   className={cn(
                     "ml-auto inline-grid h-5 min-w-5 place-items-center rounded-full px-1 text-xs font-semibold",
                     bar ? "ml-1.5" : "",
-                    "bg-warning/20 text-warning",
+                    // Light-on-dark treatment for the petrol sidebar: the global
+                    // --warning is dark amber on dark petrol (2.25:1, A2), so the
+                    // badge uses --warning-on-dark instead of retuning the global.
+                    "border border-white/20 bg-white/10 text-warning-onDark",
                   )}
                 >
                   {lowStockCount}

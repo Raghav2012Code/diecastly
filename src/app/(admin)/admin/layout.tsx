@@ -47,7 +47,7 @@ export default async function AdminLayout({
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
           <AdminNav lowStockCount={lowStockCount} />
         </div>
-        <p className="px-5 py-4 text-[11px] text-petrol-foreground/45">
+        <p className="px-5 py-4 text-[11px] text-petrol-foreground/70">
           Stock moves only through the ledger.
         </p>
       </aside>
