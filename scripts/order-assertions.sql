@@ -1082,6 +1082,60 @@ begin
 end
 $$;
 
+-- ===========================================================================
+-- 14. SQL hardening: the reference contract is null-safe, and the fingerprint
+--     helpers are not API-reachable.
+--
+--     a. A sale movement with reference_type = NULL and a non-null reference_id
+--        used to persist: `NULL = 'order'` is NULL, `NULL AND true` is NULL,
+--        and a CHECK accepts NULL — while database.md claimed violations were
+--        impossible to persist. The insert below must be rejected. The control
+--        is the file's own sales, which wrote valid order-linked movements.
+--     b. order_item_fingerprint / stored_order_item_fingerprint were the only
+--        public functions with no explicit revoke. anon must hold no EXECUTE
+--        on either. (place_online_order calls them as security definer, so
+--        the application is unaffected — §1 and §12 above exercised exactly
+--        that path after the revoke.)
+-- ===========================================================================
+do $$
+declare
+  v_rejected boolean := false;
+begin
+  begin
+    insert into public.inventory_movements
+      (product_id, delta, quantity_after, movement_type, reference_type, reference_id)
+    values
+      ('23000000-0000-0000-0000-000000000006', -1, 7, 'sale', null, gen_random_uuid());
+  exception when check_violation then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'FAIL a sale movement with a null reference_type was accepted';
+  end if;
+
+  if not exists (
+    select 1 from public.inventory_movements
+     where movement_type = 'sale'
+       and reference_type = 'order'
+       and reference_id is not null
+  ) then
+    raise exception 'FAIL control: no valid order-linked sale movement exists';
+  end if;
+
+  if has_function_privilege('anon', 'public.order_item_fingerprint(jsonb)', 'execute') then
+    raise exception 'FAIL anon can execute order_item_fingerprint';
+  end if;
+  if has_function_privilege('anon', 'public.stored_order_item_fingerprint(uuid)', 'execute') then
+    raise exception 'FAIL anon can execute stored_order_item_fingerprint';
+  end if;
+  if has_function_privilege('authenticated', 'public.order_item_fingerprint(jsonb)', 'execute') then
+    raise exception 'FAIL authenticated can execute order_item_fingerprint';
+  end if;
+
+  raise notice 'PASS the reference contract rejects null types and the helpers are revoked';
+end
+$$;
+
 -- RAISE NOTICE is invisible in single-user mode; the success signal is a SELECT
 -- because single-user echoes result rows to stdout.
 select 'ALL ASSERTIONS PASSED' as result;
