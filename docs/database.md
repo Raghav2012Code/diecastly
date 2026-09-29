@@ -82,17 +82,26 @@ Approved schema reference. Currencies are INR. All money is `numeric(12,2)` — 
 | `note` | text | |
 | `source` | text not null | `admin`, `storefront`, or `system` |
 | `actor_id` | uuid → auth.users | |
+| `idempotency_key` | text | a retry of `restock_product`/`adjust_stock` with the same key writes no second movement |
 | `created_at` | timestamptz default now() | |
 
 Indexes: `(product_id, created_at desc)`, `(reference_id)`.
 Partial unique index on `(reference_id, product_id)` where `movement_type = 'order_cancel'` — guarantees a sale is restocked at most once.
 Partial unique index on `(product_id)` where `movement_type = 'initial'` — a product's opening stock can be initialized at most once.
+Partial unique index on `(idempotency_key)` where `idempotency_key is not null` — this is what makes D37 hold on the inventory lane: a repeated stock mutation with the same key is deduped at the database, not by the UI.
 
 **Reference contract (enforced by CHECK):**
 - `sale`, `order_cancel` ⇒ `reference_type = 'order'` and `reference_id IS NOT NULL`.
 - `initial`, `restock`, `adjustment`, `damage`, `loss` ⇒ `reference_id IS NULL`.
 - `return` ⇒ manual in v1. The CHECK permits `reference_id IS NULL` **or** `reference_type = 'order'`, so an order-linked return is allowed by the schema and simply not built yet; see the constraint comment in the inventory migration.
 The RPC layer must set these consistently; the constraint makes violations impossible to persist.
+
+The comparisons are **null-safe** (`IS NOT DISTINCT FROM`, not `=`) and must stay
+that way. `reference_type = 'order'` with a NULL `reference_type` evaluates to
+NULL, `NULL AND true` is NULL, and a CHECK accepts NULL — so a sale with a NULL
+type and a real `reference_id` used to persist through a constraint that read as
+absolute. Migration `20260929100000` swaps the CHECK and validates existing
+rows first; `scripts/order-assertions.sql` §14 asserts the rejecting insert.
 
 Current stock is queried through the `v_product_stock` view.
 
@@ -127,8 +136,7 @@ Phone/email **link** orders to a customer for the seller's history. They never a
 | `access_token` | uuid not null unique default gen_random_uuid() | guest order access |
 | `expires_at` | timestamptz | set for unpaid/pending online orders |
 | `idempotency_key` | text unique | server-side dedupe for order/sale creation |
-| `note` | text | free text recorded with the movement |
-| `notes` | text | |
+| `notes` | text | free-text notes on the order (the `note` column documented here previously was a copy of `inventory_movements.note`; no migration ever created it) |
 | `created_by` | uuid → auth.users | null for storefront |
 | `cancel_reason` | text | |
 | `cancelled_at` | timestamptz | |
@@ -225,7 +233,13 @@ All durations used by RPCs (expiry, reversal window) are read from settings — 
 
 Admin reporting (read-only): `v_order_summary`, `v_order_financials`, `v_sales_daily` (IST-day rollup), `v_product_profit`, `v_customer_summary`, `v_product_stock`, `v_products_admin`, `v_low_stock`.
 
-Storefront (definer views exposing safe columns only; anon has **no** base-table grants): `v_products_public`, `v_categories_public`, `v_public_settings`.
+Storefront (definer views exposing safe columns only; anon has **no** base-table grants): `v_products_public`, `v_categories_public`, `v_public_settings`, `v_product_images_public`.
+
+`v_product_images_public` is the gallery view: `v_products_public` carries only
+`primary_image_path`, and the product page needs every image. It is a separate
+view rather than a grant on `product_images` because such a grant would expose
+every image of every product including drafts and archived ones. See
+`security.md` §3.
 
 ## 11. Relationships
 

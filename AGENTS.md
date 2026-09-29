@@ -32,7 +32,9 @@ A change is done only when all four exit clean, not before: `npm run typecheck`,
   | `npm run test:db:shim` | `scripts/pgtap-shim-selftest/` (8 scenarios) | that the shim itself can still **fail** — six of the eight are meant to fail |
 | `npm run test:db:fallback` | all five, in sequence | the SQL half of the gate |
 
-  `npm run verify:fallback` is the whole gate (`typecheck`, `lint`, `test`, `build`, then all five suites) and is what to run in place of `npm run verify` on this host, which cannot complete because `test:db` needs a reachable server. `npm run verify` remains the real gate and is unchanged.
+  `npm run verify:fallback` is the whole gate (`typecheck`, `lint`, `test`, `build`, `contrast`, then all five suites) and is what to run in place of `npm run verify` on this host, which cannot complete because `test:db` needs a reachable server. `npm run verify` remains the real gate and is unchanged.
+
+- **Contrast is part of the gate now: `npm run contrast`.** `scripts/contrast-audit.mjs` computes WCAG ratios from the token values in `src/app/globals.css` — no browser, no database — and is wired into both `verify` and `verify:fallback`. It was built *before* any token edit so every fix is confirmed by the check that found the bug, and it is negative-tested: the pre-fix `--primary` fails it at 3.56:1, matching the browser measurement in `docs/design-audit.md` to two decimals. **Re-run it after any change to a colour token**, and note that it also asserts there is no `.dark` block and no `darkMode` key — a re-added dark palette is the failure that reads as a feature (D73).
 
   This is a fallback, not a replacement for `npm run test:db`: it cannot `CREATE DATABASE`, and `RAISE NOTICE` output goes to the server log rather than stdout, so the success signal is a `SELECT` that is echoed as a result row.
 

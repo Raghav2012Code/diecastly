@@ -4,12 +4,15 @@ Approved UX reference. Admin is **desktop-first**; the storefront is **mobile-fi
 
 ## 1. Admin shell
 
-Persistent left sidebar: Dashboard, Record Sale, Inventory, Products, Orders, Customers, Sales, Analytics, Settings. Top bar: global search (products / orders / customers), low-stock badge, pending-orders badge, sign-out. Dense tables and keyboard shortcuts; usable on a tablet, including POS.
+Persistent left sidebar: Dashboard, Record Sale, Inventory, Products, Orders, Customers, Sales, Analytics, Settings. The sidebar carries two counts — low-stock on Inventory, open orders on Orders — and the same two render below 768 px as a horizontally scrollable bar, so a phone is not stranded (D67). Top bar: signed-in email and sign-out. There is **no global search**; each list has its own. Dense tables; usable on a tablet, including POS.
 
 ## 2. Dashboard
 
-KPI cards for Today / This Month — Revenue, Orders, Units sold, Gross profit, Contribution after shipping (from `v_sales_daily` / `v_order_summary`). Quick actions: **Record Sale** (primary), Add Product, Restock. Below: pending online-order queue (with `expires_at` shown), low-stock list with inline Restock, recent orders, and a 30-day sales/profit trend with top products.
-Empty state: "No sales yet — record your first sale."
+**Today only**, and every figure is scoped to the current IST day (D32, D70) — `v_sales_daily` does the conversion, so this asks for one `sale_date`. Five KPI cards: Revenue, Units sold, Gross profit, After shipping, Open orders (links to the pending queue). Every figure comes from a view that excludes cancelled and returned orders, so the dashboard cannot show revenue for a sale that was given back.
+
+Below: **Needs attention** (out-of-stock and low-stock counts as badges, then the low list, linking to Inventory), **Stock on hand** (units, at retail, at cost, potential margin — explicitly not a valuation), **Today so far** (item revenue, shipping charged, COGS, net of shipping), and the **pending-order queue**: unfulfilled orders oldest first, each with its stock-hold deadline, overdue ones badged, and a link to the full list when it is truncated.
+
+There is no 30-day trend chart and no recent-orders list on the dashboard in v1; `/admin/sales` and `/admin/orders` are the surfaces for those. A failed read states the failure rather than rendering zeroes, because a grid of zeros is indistinguishable from a day with no sales.
 
 ## 3. Inventory workflow
 
@@ -57,19 +60,28 @@ Actions map to RPCs: Confirm, **Mark Paid** (`record_payment`), Record Refund, P
 
 ## 7. Customer management
 
-List from `v_customer_summary`: name, phone, email, orders, total spent, last order; search by phone/name/email. Detail: contact info, latest address, order history, lifetime spend and profit contributed (derived). Admin can edit contact details (RLS write) and add notes. Customers are auto-created/updated at checkout by normalized phone. Duplicate-merge is deferred and documented.
+A list from `v_customer_summary`: name, phone, email, orders, total spent, last order, with search by phone/name/email. The view does the counting and the spend — and the spend **excludes** cancelled and returned orders, so a cancelled order can never appear as lifetime value.
+
+The list is read-only in v1: there is no customer detail page and no edit path (D51 — the storefront links to a customer but never modifies one, so editing is admin metadata work that is not built). Customers are created at checkout by normalized phone, which is the linking key. Duplicate-merge is deferred and documented.
 Empty state: "No customers yet — they're created automatically at checkout."
 
 ## 8. Analytics
 
-Date presets (today, 7, 30 days, this month, custom) driving Revenue, Units, Orders, AOV, COGS, Gross profit, Contribution after shipping, Margin %. Breakdowns by day (chart), product (top sellers and most profitable), category, channel (in-person vs online), and payment-method mix. Also inventory value and low-stock. Read-only from views; IST day boundaries; lightweight CSV export.
-Empty state when there is no data.
+Two surfaces, split by what the question is:
+
+**`/admin/sales`** — a `from`/`to` date range (IST boundaries) driving Revenue, Gross profit, Contribution after shipping, and Orders, plus a by-day table over the range. CSV export for the same range; the export is a route handler, not a client download, and returns a 503 rather than a file of nothing if the read fails (D64).
+
+**`/admin/analytics`** — lifetime, not ranged: products sold (units, revenue, profit), revenue by channel, and the top performer. CSV export, with the same 503 rule.
+
+So the breakdowns that ship are **by day and by channel**; there is no category breakdown, no payment-method mix, and no AOV or margin-% card. Read-only from views throughout; no figure is recomputed in TypeScript from `orders` (D61).
+
+Both reports declare their scope where a bare number would otherwise be read as "this month" or "all time" — a ranged total under an open range reads as a period the user did not choose.
 
 ## 9. Public storefront
 
 **Catalog:** responsive grid of active products with primary image, name, brand/series, price, and stock badge (In stock / Only N left / Sold out). Category/series filters from active categories, search, and sort (newest, price, name).
 **Product detail** (`/products/[slug]`): image gallery, name, brand, series, description, price, availability (available count or "Sold out"), quantity selector capped at available, Add to Cart / Buy Now, optional related items.
-Loading uses skeletons; unknown slug → 404; empty category → friendly message. Sticky add-to-cart bar on mobile; optimised images; no customer login anywhere.
+Loading uses skeletons; unknown slug → 404; empty category → friendly message. There is no sticky add-to-cart bar on mobile and no related-items section in v1 — the product detail is one gallery, the description, price, availability, quantity and Add to Cart. No customer login anywhere.
 
 ## 10. Cart and checkout
 

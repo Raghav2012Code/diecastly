@@ -29,10 +29,15 @@ Data integrity first. Build the schema, RLS, and RPC contracts correctly, then l
 - Pending-order queue, `update_order_status`, ship/deliver, `cancel_order` (incl. in-person reversal window), customers.
 - **Exit:** a real online order flows browse → checkout → confirm → ship → complete, and cancels restock exactly once.
 
-### Slice D — Reporting and hardening (Phases 6–7)
-- Dashboard, Sales, Analytics, Settings, CSV export.
-- Edge-case tests, responsive QA, low-stock alerts, polish.
-- **Exit:** reports reconcile with the ledger; release checklist complete.
+### Slice D — Reporting and hardening (Phases 6–7) — **met**
+- Dashboard, Sales, Analytics, Settings, CSV export. ✅
+- Edge-case tests, responsive QA, low-stock alerts, polish. ✅
+- Contrast measured in the browser and gated in `verify`; the dead dark palette removed. ✅
+- Pending-order queue with `expires_at` surfaced, on the dashboard and as a nav badge. ✅
+- **Exit:** reports reconcile with the ledger; release checklist complete. ✅
+  Every figure on every report is read from a reporting view that excludes
+  cancelled and returned orders, so the property is a fact about *where the
+  number comes from* rather than about a page (D61, D70).
 
 Storefront (4) may be swapped with online order ops (5) if preferred; 1–3 must precede both.
 
@@ -54,11 +59,13 @@ Online payment gateway and `payment_events`; automated expiry job; full returns/
 - **Secrets:** Supabase URL + anon key public; service-role key server-only; none in the repo.
 - **Backups:** Supabase automated backups; manual export before risky migrations.
 
-## Items requiring confirmation
+## Items requiring confirmation — resolved
 
-1. Tax/GST: tax-inclusive pricing, or a required breakdown on receipts?
-2. Defaults: `online_order_hold_hours` (propose 48), `in_person_reversal_window_hours` (propose 24), `default_shipping_fee`, COD enabled by default?
-3. Confirm online orders continue to decrement stock at placement with `expires_at` holds.
-4. Email/SMS order confirmation soon, or manual contact for v1?
-5. Does product condition (sealed/loose) or per-unit uniqueness ever matter?
-6. Confirm the RPC-write-only rule for `orders`/`order_items`/`order_status_history` (decision D31).
+| # | Question | Resolution |
+|---|---|---|
+| 1 | Tax/GST: tax-inclusive, or a required breakdown on receipts? | **Neither in v1.** The schema has no tax columns and nothing computes tax, so the honest reading is tax-exclusive with no breakdown. Inventing a tax line would have changed what `total` means — a schema change, not a UI decision. D60 |
+| 2 | Defaults: `online_order_hold_hours` 48, `in_person_reversal_window_hours` 24, shipping fee, COD by default? | **48 h, 24 h**, both in `settings` and read by the RPCs — never hard-coded. Shipping fee and COD are settings, read per request, with COD re-checked inside `place_online_order` so a stale form cannot force a method the seller has switched off. D60 |
+| 3 | Online orders decrement stock at placement with `expires_at` holds? | **Confirmed.** The hold is now visible to the admin, which was the actual gap: `expires_at` was read nowhere in the admin UI, so a seller saw a pending order and never its deadline. Queue, dashboard card, nav badge and detail line (D75) |
+| 4 | Email/SMS confirmation soon, or manual contact? | **Manual for v1.** A token-based bookmarkable link is the whole access model (D10, D59); notifications are deferred |
+| 5 | Does product condition (sealed/loose) or per-unit uniqueness ever matter? | **No, not for v1.** Every unit is fungible: stock is a count and movements are deltas. Per-unit identity would change the inventory model from a count to a set of serials |
+| 6 | Confirm the RPC-write-only rule for `orders`/`order_items`/`order_status_history` | **Confirmed**, D31. Extended in practice to `payments` and the `inventory_*` tables, so all six ledger tables are SELECT-only to the client |

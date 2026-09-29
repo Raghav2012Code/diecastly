@@ -26,18 +26,17 @@ export function getPublicEnv(): PublicEnv {
   };
 }
 
-/**
- * Server-only. The service-role key bypasses RLS and must never be exposed to
- * the browser. Only import this from server code when it is genuinely required.
+/*
+ * Two functions used to live here and are deliberately not restored.
+ *
+ * `getServiceRoleKey` had zero references, because v1 has no service-role
+ * client at all: every admin read goes through the session cookie, which RLS
+ * governs, and the one future caller is the D14 gateway, which is not built.
+ * `isSupabaseConfigured` had zero references too — nothing probes for
+ * configuration, and `getPublicEnv` throws a message that names the fix, which
+ * is better than a boolean that silently degrades a page.
+ *
+ * `SUPABASE_SERVICE_ROLE_KEY` stays in `.env.example` as a documented,
+ * intentionally unread variable, so the gateway phase has a documented place to
+ * fill it in rather than discovering a missing entry.
  */
-export function getServiceRoleKey(): string {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) {
-    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY (server-only).");
-  }
-  return key;
-}
-
-export function isSupabaseConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-}

@@ -58,6 +58,7 @@ One Next.js app with two route groups:
 | `/admin/sales` | Admin | admin | Sales/profit reports |
 | `/admin/analytics` | Admin | admin | Trend/breakdown reports |
 | `/admin/settings` | Admin | admin | Business settings |
+| `/preview` | Admin | dev only | Static preview harness (no database), used for design review and the mobile/tablet QA in D66/D67 |
 
 ## 6. Data-access lanes
 
@@ -91,26 +92,35 @@ Every read and write goes through exactly one of three lanes. Mixing lanes is th
 ```
 src/
   app/
-    (store)/            catalog, product, cart, checkout, order/[number]
-    (admin)/admin/      dashboard, pos, inventory, products, orders,
-                        customers, sales, analytics, settings, login
+    (store)/            catalog, products/[slug], cart, checkout, order/[number]
+    (admin)/admin/      dashboard, pos, inventory ( + movements), products
+                        ( + new, [id], categories, suppliers), orders ( + [id],
+                        [id]/receipt), customers, sales ( + export), analytics
+                        ( + export), settings
+    (auth)/admin/login/ Supabase Auth sign-in
+    (preview)/preview/  static preview harness (the design-review surface)
   components/{ui,admin,store}
   lib/
-    supabase/{client,server,middleware}.ts
-    db/rpc.ts, db/errors.ts
-    validation/
-      money.ts
-      catalog.ts, inventory.ts, order.ts
-    dates.ts
-    list-state.ts, list-params.ts
+    supabase/{client,server}.ts
+    db/{rpc,errors}.ts
+    validation/{money,catalog,inventory,order,settings}.ts
+    catalog/, inventory/, orders/, customers/, reports/, store/, preview/  data modules
+    search.ts, list-state.ts, list-params.ts, dates.ts, display.ts, storage.ts
     types/database.types.ts
   middleware.ts
-  hooks/use-cart.ts
 supabase/
   migrations/           schema, RLS, functions
-  tests/                SQL/ pgTAP invariant tests
+  tests/                pgTAP invariant files
 docs/                   this documentation set
 ```
+
+Notes on the structure as it exists rather than as it was planned: the cart is a
+React context at `lib/store/cart-context.tsx` (there is no `hooks/` directory —
+the planned `hooks/use-cart.ts` was never created); login lives in the `(auth)`
+route group, not under `(admin)`; and each data module (`catalog`, `inventory`,
+`orders`, `customers`, `reports`, `store`, `preview`) owns its own reads rather
+than a shared `lib/data.ts`.
+
 
 ## 10. Deliberate non-goals and scope
 

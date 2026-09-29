@@ -65,7 +65,7 @@ looks better and more deliberate; it is also the bigger visual change, and it
 has to be checked against the vermilion-tinted `bg-primary/10` surfaces, where
 ink text would need re-checking in the other direction.
 
-**This is a design decision, not a bug fix. It needs your call.** §D.
+**This is a design decision, not a bug fix. It needs your call.** §D. — **Resolved: Option A.** One token changed, white-on-colour preserved everywhere, and the `bg-primary/*` tints did not need re-checking because the text moved rather than the foreground.
 
 ### A2 · The low-stock badge is illegible — `critical` *(self-inflicted, Phase 7)*
 
@@ -86,7 +86,8 @@ value rather than a darkened global:
 
 Add `--warning-on-dark` (or scope the badge to a fixed light value) rather than
 retuning the global `--warning`, which has to keep working on the light tints in
-A3.
+A3. — **Done:** `--warning-on-dark: 38 100% 62%`, on its own `bg-white/10` pill
+over petrol. The global `--warning` is untouched.
 
 ### A3 · Status-badge text fails on its own tint — `major`
 
@@ -108,7 +109,9 @@ A third fix is better than darkening: give the badge a **dedicated text token**
 (`--success-text`, `--warning-text`, `--destructive-text`) separate from the
 fill used for dots and borders. That decouples "what colour is this status" from
 "is this text legible", which is where this class of bug comes from. More tokens,
-but it is the one that stops it recurring.
+but it is the one that stops it recurring. — **Done** (D74), and the same split
+is why A2 needed `--warning-on-dark` rather than a retuned `--warning`: both
+findings were one token doing two jobs.
 
 ### A4 · Sidebar footnote fails — `major`
 
@@ -187,30 +190,34 @@ problem more than an aesthetic one.
 
 ---
 
-## B. Fix plan
+## B. Fix plan — all nine closed
 
-Ordered so each step is verifiable before the next depends on it.
+Every row below is implemented, and the contrast work is now a gate rather than
+a review pass (`scripts/contrast-audit.mjs`, wired into `verify` and
+`verify:fallback`). Modelled figures are the script's; the browser figures in §A
+remain the ground truth they were measured against, and both are recorded rather
+than one being presented as the other.
 
-| # | Fix | Files | Verify by |
+| # | Fix | Files | Verified by |
 | --- | --- | --- | --- |
-| 1 | **Decide A1 Option A or B**, then change one token | `globals.css` | re-run the contrast scan; assert no `bg-primary` element below 4.5:1 |
-| 2 | Fix the low-stock badge with a dark-context value (A2) | `globals.css`, `admin/nav.tsx` | scan the admin shell; badge ≥ 4.5:1 |
-| 3 | Badge text tokens, or darken `--success`/`--warning` by 4–6 L (A3) | `globals.css`, `components/ui/badge.tsx` | scan `orders` + `order`; no badge below 4.5:1 |
-| 4 | Raise the sidebar footnote opacity (A4) | `admin/layout.tsx` | scan `admin` |
-| 5 | **Decide** wire-up vs deletion for dark mode (A5) | `globals.css`, `tailwind.config.ts` | either a rendered dark screenshot, or no `.dark` block and no `darkMode` key |
-| 6 | Rebuild the orders filter bar with real labels (A6) | `components/admin/order-filters.tsx` | visual + a11y snapshot; every control has an accessible name |
-| 7 | Left-align or de-void the empty/error states (A7) | storefront empty/error components | screenshot `/cart` at 1280 |
-| 8 | Tint `--card` off pure white (A8) | `globals.css` | visual |
-| 9 | Decide whether the storefront needs a contact page (A9) | new route + footer | product decision, not a gate |
+| 1 | **A1 Option A** — `--primary`/`--ring` `21 90% 48%` → `21 90% 40%` | `globals.css` | 4.90:1 white-on-primary, 4.62:1 on `--card` (was 3.56:1, and 3.35:1 on the tinted card) |
+| 2 | **A2** — sidebar badge on a new `--warning-on-dark` (A2 value) | `globals.css`, `admin/nav.tsx` | 7.32:1 on petrol (was 2.25:1) |
+| 3 | **A3** — dedicated `--success-text` / `--warning-text` / `--destructive-text`; every bare `text-success`/`text-warning`/`text-destructive` usage migrated | `globals.css`, `badge.tsx`, 4 call sites | 6.46 / 5.91 / 6.01:1 on their own tints (was 4.35 / 4.27 / 4.63) |
+| 4 | **A4** — sidebar footnote `/45` → `/70` | `admin/layout.tsx`, preview harness | 6.30:1 (was 3.53:1) |
+| 5 | **A5** — dark palette **deleted** (not wired) | `globals.css`, `tailwind.config.ts` | no `.dark` block, no `darkMode` key; both asserted by the audit script so they cannot return |
+| 6 | **A6** — filter bar rebuilt: labelled controls in a fieldset, actions separated | `order-filters.tsx` | every control has a visible label, not a placeholder-as-label |
+| 7 | **A7** — empty/error states left-aligned, `min-h-[60vh]` dropped | storefront `error.tsx`, both `not-found.tsx` | layout no longer reserves half a viewport for three lines |
+| 8 | **A8** — `--card` `0 0% 100%` → `75 12% 97%` | `globals.css` | same 1.13:1 step off the page, no longer pure white |
+| 9 | **A9** — storefront contact page | — | **Not built.** Product decision, out of scope for a polish pass; still open (§D3) |
 
-**Make the contrast scan a gate, not a one-off.** The single highest-value change
-in this plan is not any individual token — it is turning the scan into
-`scripts/contrast-audit.mjs` and wiring it into `npm run verify`. Four of the
-five majors above are contrast failures, and nothing in the current gate would
-have caught any of them. A scan that walks every text node, composites
-translucent ancestors, and fails on a ratio below the WCAG threshold would make
-A1–A4 impossible to reintroduce. Do this **first**, before the token changes, so
-each fix is confirmed by the same check that found the bug.
+**The scan is a gate, not a one-off.** Four of the five majors were contrast
+failures and nothing in the gate would have caught any of them — which is how
+the A2 badge shipped at 2.25:1. `scripts/contrast-audit.mjs` computes WCAG
+ratios from the token values in `globals.css`, so it needs no browser and no
+database, and it is negative-tested: reverting `--primary` to `48%` fails it at
+**3.56:1**, matching the browser measurement in §A1 to two decimals. It also
+asserts the dark palette stays deleted, because a re-added `.dark` block is the
+failure that reads as a feature.
 
 ### Verification, stated honestly
 
@@ -294,7 +301,12 @@ purpose. It should survive whatever else changes.
    mode is real work (elevation by lightness, desaturated accents, a full
    contrast pass) rather than a config flag. If you want it, it should be a
    roadmap phase with its own audit — not a side effect of a token edit.
+   — **Resolved: deleted.** A dark mode that is wanted later is a roadmap phase
+   with its own audit; the 43 lines are gone and the contrast script fails if
+   anyone puts them back.
 
 3. **A9 — a contact page on the storefront.** A real shop with no way to ask a
    question is a conversion leak. Out of scope for a polish pass; flagging it
-   because no amount of visual work fixes it.
+   because no amount of visual work fixes it. — **Still open.** This is the one
+   finding in this audit that is a product decision rather than a defect, and it
+   is the only item above not closed.
