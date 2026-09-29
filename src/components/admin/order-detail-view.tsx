@@ -13,6 +13,7 @@ import {
   paymentStatusTone,
 } from "@/lib/display";
 import { formatDateTimeIST } from "@/lib/dates";
+import { expiryState } from "@/lib/orders/expiry";
 import { addMoney, formatINR, orderContribution, productGrossProfit } from "@/lib/validation/money";
 import { cn } from "@/lib/utils";
 import type { OrderDetail, ShippingAddress } from "@/lib/types/database.types";
@@ -96,6 +97,21 @@ export function OrderDetailView({
           <p className="text-sm text-muted-foreground">
             {orderChannelLabel[order.channel]} · {formatDateTimeIST(order.created_at)}
           </p>
+          {order.expires_at &&
+          (order.status === "pending" || order.status === "confirmed" || order.status === "packed") ? (
+            <p
+              className={cn(
+                "text-sm",
+                expiryState(order.expires_at) === "overdue"
+                  ? "font-medium text-destructive-text"
+                  : "text-muted-foreground",
+              )}
+            >
+              {expiryState(order.expires_at) === "overdue"
+                ? `Stock hold expired ${formatDateTimeIST(order.expires_at)}`
+                : `Stock hold until ${formatDateTimeIST(order.expires_at)}`}
+            </p>
+          ) : null}
         </div>
 
         {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}

@@ -406,6 +406,7 @@ export type VOrderSummaryRow = {
   customer_phone: string | null;
   payment_method: PaymentMethod | null;
   created_at: string;
+  expires_at: string | null;
   subtotal: number;
   discount_total: number;
   shipping_fee: number;

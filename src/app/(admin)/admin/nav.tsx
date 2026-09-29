@@ -23,9 +23,11 @@ import { cn } from "@/lib/utils";
 export function AdminNav({
   orientation = "sidebar",
   lowStockCount = 0,
+  openOrdersCount = 0,
 }: {
   orientation?: "sidebar" | "bar";
   lowStockCount?: number;
+  openOrdersCount?: number;
 }) {
   const pathname = usePathname();
   const bar = orientation === "bar";
@@ -44,6 +46,7 @@ export function AdminNav({
           item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href);
         const Icon = item.icon;
         const lowStock = item.href === "/admin/inventory" && lowStockCount > 0;
+        const openOrders = item.href === "/admin/orders" && openOrdersCount > 0;
 
         return (
           <Link
@@ -85,6 +88,25 @@ export function AdminNav({
                     badge is not silently invisible. */}
                 <span className="sr-only">
                   {`${lowStockCount} product${lowStockCount === 1 ? "" : "s"} low on stock`}
+                </span>
+              </>
+            ) : null}
+
+            {openOrders ? (
+              <>
+                <span
+                  className={cn(
+                    "ml-auto inline-grid h-5 min-w-5 place-items-center rounded-full px-1 text-xs font-semibold",
+                    bar ? "ml-1.5" : "",
+                    // Full-strength petrol foreground on petrol: 11.19:1, so no
+                    // separate token needed the way the warning badge needed one.
+                    "border border-white/20 bg-white/10 text-petrol-foreground",
+                  )}
+                >
+                  {openOrdersCount}
+                </span>
+                <span className="sr-only">
+                  {`${openOrdersCount} open order${openOrdersCount === 1 ? "" : "s"} waiting on fulfilment`}
                 </span>
               </>
             ) : null}

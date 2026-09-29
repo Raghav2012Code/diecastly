@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDashboardKpis, getInventoryValue, getLowStock, getLowStockCounts, todayIst } from "@/lib/reports/data";
+import { listOpenOrders } from "@/lib/customers/data";
+import { OpenOrdersQueue } from "@/components/admin/open-orders-queue";
 import { formatINR } from "@/lib/validation/money";
 import { formatDateIST } from "@/lib/dates";
 
@@ -27,11 +29,12 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
   const day = todayIst();
-  const [kpis, stock, counts, inventory] = await Promise.all([
+  const [kpis, stock, counts, inventory, queue] = await Promise.all([
     getDashboardKpis(day),
     getLowStock(8),
     getLowStockCounts(),
     getInventoryValue(),
+    listOpenOrders(),
   ]);
 
   if (!kpis.ok) {
@@ -183,6 +186,29 @@ export default async function AdminDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Pending-order queue</CardTitle>
+          <CardDescription>
+            Unfulfilled orders, oldest first. The hold deadline is the stock the order is
+            keeping off the shelf.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!queue.ok ? (
+            <p className="text-sm text-muted-foreground">
+              The queue could not be loaded.{" "}
+              <Link href="/admin/orders?status=pending" className="underline underline-offset-4">
+                Try the orders list
+              </Link>
+              .
+            </p>
+          ) : (
+            <OpenOrdersQueue rows={queue.data} />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

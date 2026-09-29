@@ -1023,6 +1023,65 @@ begin
 end
 $$;
 
+-- ===========================================================================
+-- 13. v_order_summary exposes the stock-hold expiry.
+--
+--     D18 created orders.expires_at and the queue reads through this view, but
+--     the view never selected the column — so the admin saw the pending order
+--     and never its deadline. Two claims, each with something that would make
+--     it false:
+--       a. an online order's summary row carries the same expires_at as
+--          orders (a control asserts orders itself is non-null, so this cannot
+--          pass by returning null for everything — and before the fix it
+--          errored on the missing column outright).
+--       b. an in-person sale reads null in both places, so this cannot pass
+--          against a view that stamps every row.
+-- ===========================================================================
+do $$
+declare
+  v_online uuid;
+  v_pos jsonb;
+  v_s timestamptz;
+  v_o timestamptz;
+begin
+  insert into public.products (id, name, slug, sku, selling_price, purchase_cost, status) values
+    ('23000000-0000-0000-0000-000000000006', 'Expiry Probe', 'asrt-expiry', 'RS-E', 100, 40, 'active')
+  on conflict (id) do nothing;
+  perform public.set_initial_stock('23000000-0000-0000-0000-000000000006', 10, 40);
+
+  v_online := (public.place_online_order(
+    '[{"productId":"23000000-0000-0000-0000-000000000006","quantity":1}]'::jsonb,
+    '{"name":"Expiry Buyer","phone":"9900000002"}'::jsonb,
+    'upi',
+    '{"addressLine1":"1 St","city":"Pune","state":"MH","postalCode":"411001"}'::jsonb,
+    null,
+    'asrt-expiry-online'
+  ) ->> 'order_id')::uuid;
+
+  select expires_at into v_o from public.orders where id = v_online;
+  if v_o is null then
+    raise exception 'FAIL control: the online fixture has no expires_at on orders';
+  end if;
+
+  select expires_at into v_s from public.v_order_summary where order_id = v_online;
+  if v_s is distinct from v_o then
+    raise exception 'FAIL v_order_summary.expires_at is %, orders says %', v_s, v_o;
+  end if;
+
+  v_pos := public.record_in_person_sale(
+    '[{"productId":"23000000-0000-0000-0000-000000000006","quantity":1,"unitPrice":100}]'::jsonb,
+    'cash'::public.payment_method, null, null, null, 'asrt-expiry-pos'::text
+  );
+  select expires_at into v_s from public.v_order_summary
+   where order_id = ((v_pos ->> 'order_id')::uuid);
+  if v_s is not null then
+    raise exception 'FAIL an in-person sale shows expires_at % in the summary', v_s;
+  end if;
+
+  raise notice 'PASS v_order_summary exposes the stock-hold expiry';
+end
+$$;
+
 -- RAISE NOTICE is invisible in single-user mode; the success signal is a SELECT
 -- because single-user echoes result rows to stdout.
 select 'ALL ASSERTIONS PASSED' as result;
