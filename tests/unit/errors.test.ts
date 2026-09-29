@@ -10,6 +10,11 @@ import { describeDbError, fail, failWith, GENERIC_ERROR_MESSAGE } from "@/lib/db
  *
  * When a migration adds a raise, add the code here. If it is missing from
  * `MESSAGES`, the test below fails.
+ *
+ * `raised-codes.test.ts` reads the same codes out of the SQL and fails if any
+ * raised token is untranslated, so forgetting this list is now a build failure
+ * rather than a silent gap — but keep it as an explicit list anyway: a parsed
+ * one would couple the assertion to file layout and give a worse message.
  */
 const RAISED_CODES = [
   "cod_disabled",
