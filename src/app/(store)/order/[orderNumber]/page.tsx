@@ -51,8 +51,12 @@ export default async function OrderPage({
   if (!uuid) notFound();
 
   const supabase = createAnonClient();
+  // Next.js has already decoded the param: a second decodeURIComponent would
+  // throw URIError on a malformed escape (e.g. /order/%25 -> "%") and 500 a
+  // public route that must stay indistinguishable (D59). Pass through; an
+  // unknown number returns found=false and notFound() below.
   const result = await getOrderByAccess(supabase, {
-    orderNumber: decodeURIComponent(orderNumber),
+    orderNumber,
     accessToken: uuid,
   });
 
@@ -60,27 +64,12 @@ export default async function OrderPage({
   // the database was briefly unreachable would be a lie about the order.
   if (!result.ok) throw new Error(result.error.message);
 
-  const data = result.data as {
-    found?: boolean;
-    order_number?: string;
-    status?: string;
-    channel?: string;
-    created_at?: string;
-    customer_name?: string;
-    payment_method?: string;
-    subtotal?: number;
-    shipping_fee?: number;
-    total?: number;
-    expires_at?: string | null;
-    courier?: string | null;
-    tracking_number?: string | null;
-    items?: { name: string; quantity: number; unit_price: number; line_total: number }[];
-  };
+  const data = result.data;
 
   if (!data.found) notFound();
 
   const settings = await getPublicSettings();
-  const items = data.items ?? [];
+  const items = data.items;
   const method = data.payment_method === "cod" ? "cod" : "upi";
 
   return (
@@ -97,7 +86,7 @@ export default async function OrderPage({
           {data.created_at ? ` · placed ${formatDateTimeIST(data.created_at)}` : null}
         </p>
         <div className="pt-1">
-          <OrderStatusBadge status={data.status ?? "pending"} />
+          <OrderStatusBadge status={data.status} />
         </div>
       </div>
 
@@ -110,7 +99,7 @@ export default async function OrderPage({
         ) : (
           <div className="space-y-2 text-sm text-muted-foreground">
             <p>
-              Pay <span className="font-medium text-foreground">{formatINR(data.total ?? 0)}</span> to{" "}
+              Pay <span className="font-medium text-foreground">{formatINR(data.total)}</span> to{" "}
               {settings.upi_id ? (
                 <span className="font-medium text-foreground">{settings.upi_id}</span>
               ) : (
@@ -165,17 +154,17 @@ export default async function OrderPage({
       <dl className="mt-4 space-y-1.5 text-sm">
         <div className="flex justify-between">
           <dt className="text-muted-foreground">Subtotal</dt>
-          <dd className="tabular-nums">{formatINR(data.subtotal ?? 0)}</dd>
+          <dd className="tabular-nums">{formatINR(data.subtotal)}</dd>
         </div>
         <div className="flex justify-between">
           <dt className="text-muted-foreground">Shipping</dt>
           <dd className="tabular-nums">
-            {(data.shipping_fee ?? 0) > 0 ? formatINR(data.shipping_fee ?? 0) : "Free"}
+            {data.shipping_fee > 0 ? formatINR(data.shipping_fee) : "Free"}
           </dd>
         </div>
         <div className="flex justify-between border-t border-border pt-2 text-base font-semibold">
           <dt>Total</dt>
-          <dd className="tabular-nums">{formatINR(data.total ?? 0)}</dd>
+          <dd className="tabular-nums">{formatINR(data.total)}</dd>
         </div>
       </dl>
 

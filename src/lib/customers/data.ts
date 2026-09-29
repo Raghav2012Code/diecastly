@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { sanitizeSearchTerm as sanitizeSearch } from "@/lib/search";
 import { fail, ok, type Result } from "@/lib/db/errors";
 import type {
   CustomerRow,
@@ -11,14 +12,6 @@ import type {
  * RPC (normalized phone is the linking key); this module only reads them, so
  * the till can attach an existing buyer to a sale.
  */
-
-function sanitizeSearch(term: string): string {
-  return term
-    .trim()
-    .replace(/[,()*%\\]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 export async function searchCustomers(term: string, limit = 8): Promise<Result<CustomerRow[]>> {
   const supabase = await createClient();

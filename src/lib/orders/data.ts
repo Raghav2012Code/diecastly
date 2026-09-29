@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { sanitizeSearchTerm as sanitizeSearch } from "@/lib/search";
 import { istDayBoundary } from "@/lib/dates";
 import { fail, ok, type Result } from "@/lib/db/errors";
 import type {
@@ -47,14 +48,6 @@ const MAX_PAGE_SIZE = 100;
 function clampPageSize(pageSize: number | undefined): number {
   if (!pageSize || Number.isNaN(pageSize)) return DEFAULT_PAGE_SIZE;
   return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(pageSize)));
-}
-
-function sanitizeSearch(term: string): string {
-  return term
-    .trim()
-    .replace(/[,()*%\\]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 

@@ -15,6 +15,7 @@
  */
 
 import { createAnonClient } from "@/lib/supabase/server";
+import { sanitizeSearchTerm as sanitizeSearch } from "@/lib/search";
 import { fail, ok, type Result } from "@/lib/db/errors";
 import type {
   PublicCategoryRow,
@@ -38,18 +39,6 @@ export type StorefrontListPage = {
 
 const PAGE_SIZE = 12;
 const MAX_PAGE_SIZE = 48;
-
-/**
- * Comma, percent, underscore and backslash are the characters PostgREST's `or`
- * filter treats as syntax. A search term is attacker-controlled, so leaving them
- * in would let a crafted query change the filter's meaning rather than search
- * for what was typed. Stripped rather than escaped because `ilike` has no escape
- * parameter here, and a search for "50%" legitimately matching everything is a
- * far better failure than a filter that can be rewritten.
- */
-function sanitizeSearch(term: string): string {
-  return term.replace(/[,%_\\]/g, " ").replace(/\s+/g, " ").trim();
-}
 
 function clampPageSize(pageSize: number | undefined): number {
   if (!pageSize || !Number.isFinite(pageSize)) return PAGE_SIZE;

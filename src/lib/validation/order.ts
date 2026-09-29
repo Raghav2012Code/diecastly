@@ -65,7 +65,18 @@ export const paymentInputSchema = z.object({
 
 export const customerInputSchema = z.object({
   name: z.string().min(1).max(120),
-  phone: z.string().min(6).max(20),
+  // The normalised phone is the customer's permanent linking key, so junk is
+  // permanent. The picker enforces an Indian mobile; the server is looser
+  // (10-13 digits) so landlines still work, but a 6-character string must not
+  // become a permanent identity (D53 class).
+  phone: z
+    .string()
+    .min(6)
+    .max(20)
+    .refine((value) => {
+      const digits = value.replace(/\D/g, "");
+      return digits.length >= 10 && digits.length <= 13;
+    }, "Enter a valid phone number with 10-13 digits."),
   email: z.string().email().max(200).optional(),
 });
 

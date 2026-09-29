@@ -48,8 +48,15 @@ export function OpeningStockDialog({
     startTransition(async () => {
       const result = await setInitialStockAction(parsed.data);
       if (result.ok) {
-        toast(`Opening stock recorded — ${productName} at ${result.data.quantity}`, "success");
-        setOpen(false);
+        toast(
+          result.data.repeated
+            ? `Already recorded — ${productName} still at ${result.data.quantity}`
+            : `Opening stock recorded — ${productName} at ${result.data.quantity}`,
+          result.data.repeated ? "error" : "success",
+        );
+        if (!result.data.repeated) {
+          setOpen(false);
+        }
         router.refresh();
       } else {
         setError(result.error);

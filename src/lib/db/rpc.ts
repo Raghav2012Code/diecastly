@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 import { fail, ok, type Result } from "./errors";
 import type {
   DerivedPaymentStatus,
@@ -277,16 +278,52 @@ export async function placeOnlineOrder(
 }
 
 /** Guest order lookup. Requires BOTH the order number and the access token. */
+const guestOrderItemSchema = z.object({
+  name: z.string(),
+  quantity: z.number(),
+  unit_price: z.number(),
+  line_total: z.number(),
+});
+
+const guestOrderFoundSchema = z.object({
+  found: z.literal(true),
+  order_number: z.string(),
+  status: z.string(),
+  channel: z.string().optional(),
+  created_at: z.string().optional(),
+  customer_name: z.string().nullable().optional(),
+  payment_method: z.string().nullable().optional(),
+  subtotal: z.number(),
+  shipping_fee: z.number(),
+  total: z.number(),
+  expires_at: z.string().nullable().optional(),
+  courier: z.string().nullable().optional(),
+  tracking_number: z.string().nullable().optional(),
+  items: z.array(guestOrderItemSchema),
+});
+
+const guestOrderNotFoundSchema = z.object({
+  found: z.literal(false),
+});
+
+const guestOrderSchema = z.union([guestOrderFoundSchema, guestOrderNotFoundSchema]);
+
+export type GuestOrderResult = z.infer<typeof guestOrderSchema>;
+
 export async function getOrderByAccess(
   client: Client,
   args: { orderNumber: string; accessToken: string },
-): Promise<Result<Record<string, unknown>>> {
+): Promise<Result<GuestOrderResult>> {
   const { data, error } = await client.rpc("get_order_by_access", {
     p_order_number: args.orderNumber,
     p_access_token: args.accessToken,
   });
   if (error) return fail(error);
-  return ok((data ?? {}) as Record<string, unknown>);
+  // A drift between order_json and this literal must surface as an error,
+  // never as a confident ₹0.00 rendered from `?? 0` fallbacks.
+  const parsed = guestOrderSchema.safeParse((data ?? {}) as unknown);
+  if (!parsed.success) throw new Error("Unexpected order payload.");
+  return ok(parsed.data);
 }
 
 // ---------------------------------------------------------------------------

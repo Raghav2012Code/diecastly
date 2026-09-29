@@ -126,18 +126,22 @@ $$;
 do $$
 declare
   v_ids uuid[];
-  v_orders integer[];
+  v_paths text[];
   v_dupes integer;
 begin
   select array_agg(id order by sort_order desc) into v_ids
     from public.product_images where product_id = '32000000-0000-0000-0000-000000000001';
   perform public.reorder_product_images(v_ids);
 
-  select array_agg(sort_order order by sort_order) into v_orders
+  -- Compare identity, not the sorted set: array_agg(sort_order order by
+  -- sort_order) is self-sorting and returns {0,1,2,3} even if the reorder was
+  -- a no-op. The requested order was d,c,b,a, so the stored paths in display
+  -- order must be exactly that.
+  select array_agg(storage_path order by sort_order) into v_paths
     from public.product_images where product_id = '32000000-0000-0000-0000-000000000001';
 
-  if v_orders <> array[0,1,2,3] then
-    raise exception 'FAIL reorder produced sort orders %, expected {0,1,2,3}', v_orders;
+  if v_paths <> array['assert/d.png','assert/c.png','assert/b.png','assert/a.png'] then
+    raise exception 'FAIL reorder produced paths %, expected {d,c,b,a}', v_paths;
   end if;
 
   select count(*) into v_dupes from (
@@ -148,7 +152,7 @@ begin
   if v_dupes > 0 then
     raise exception 'FAIL reorder left % duplicated sort_order value(s)', v_dupes;
   end if;
-  raise notice 'PASS reorder applies a complete set with no duplicate sort_order';
+  raise notice 'PASS reorder applies the requested order with no duplicate sort_order';
 end
 $$;
 
@@ -233,6 +237,7 @@ declare
   v_primary uuid;
   v_count integer;
   v_remaining integer;
+  v_new_primary_path text;
 begin
   select id into v_primary from public.product_images
    where product_id = '32000000-0000-0000-0000-000000000001' and is_primary;
@@ -255,7 +260,16 @@ begin
   if v_count <> 1 then
     raise exception 'FAIL expected exactly 1 primary after the delete, found %', v_count;
   end if;
-  raise notice 'PASS deleting the primary removes it and promotes exactly one successor';
+
+  -- D48 promises the successor by display order: after the §4 reversal the
+  -- order is d=0,c=1,b=2,a=3 and the primary is a (sort 3), so deleting it
+  -- must promote d, the smallest sort_order among the survivors.
+  select storage_path into v_new_primary_path from public.product_images
+   where product_id = '32000000-0000-0000-0000-000000000001' and is_primary;
+  if v_new_primary_path <> 'assert/d.png' then
+    raise exception 'FAIL expected assert/d.png as the promoted primary, found %', v_new_primary_path;
+  end if;
+  raise notice 'PASS deleting the primary removes it and promotes the next by display order';
 end
 $$;
 

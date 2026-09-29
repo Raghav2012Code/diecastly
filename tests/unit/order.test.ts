@@ -102,6 +102,41 @@ describe("normalizePhone", () => {
   });
 });
 
+describe("customerInputSchema phone", () => {
+  const base = {
+    items: [{ productId: "11111111-1111-1111-1111-111111111111", quantity: 1 }],
+    customer: {
+      name: "Priya",
+      phone: "9876543210",
+      addressLine1: "12, 4th Cross",
+      city: "Bengaluru",
+      state: "Karnataka",
+      postalCode: "560038",
+    },
+    paymentMethod: "upi" as const,
+    idempotencyKey: "online-key-0001",
+  };
+
+  it("rejects a 6-character phone that would become a permanent linking key", () => {
+    expect(
+      onlineOrderInputSchema.safeParse({
+        ...base,
+        customer: { ...base.customer, phone: "123456" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts 10 digits and a 13-digit landline form", () => {
+    expect(onlineOrderInputSchema.safeParse(base).success).toBe(true);
+    expect(
+      onlineOrderInputSchema.safeParse({
+        ...base,
+        customer: { ...base.customer, phone: "+91 80 41123456" },
+      }).success,
+    ).toBe(true);
+  });
+});
+
 describe("onlineLineSchema", () => {
   const base = { productId: "11111111-1111-1111-1111-111111111111", quantity: 1 };
 
