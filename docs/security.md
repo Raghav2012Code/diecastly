@@ -71,6 +71,7 @@ The Supabase `service_role` key bypasses RLS and is used **server-side only**; i
 | `record_in_person_sale` | admin | Atomic: decrement stock, `sale` movements, order (`completed`), items (cost snapshot), payments; idempotency key dedupes retries |
 | `place_online_order` | anon | Atomic: upsert customer, decrement stock, `sale` movements, order (`pending`, `expires_at`), return `access_token`; idempotency key dedupes retries |
 | `cancel_order` | admin | Atomic: validate state/window, restock once, optional refund, status history |
+| `restock_cancelled_order` | admin | Return stock for an order cancelled with `restock = false`. Rejects a non-cancelled order, is a clean no-op when the items are already back, and writes `order_cancel` movements so the existing "restocked at most once" index applies (D80) |
 | `update_order_status` | admin | Validate transition matrix, stamp timestamps, write history |
 | `record_payment` | admin | Append `received` payment; never changes fulfillment status; idempotency key reuses the original result |
 | `refund_payment` | admin | Append compensating negative payment; never changes fulfillment status |

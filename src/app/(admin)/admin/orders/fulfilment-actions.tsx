@@ -8,8 +8,17 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
-import { advanceOrderAction, cancelOrderAction } from "@/app/(admin)/admin/orders/actions";
-import { canCancel, nextStatus, nextStatusLabel } from "@/lib/validation/fulfilment";
+import {
+  advanceOrderAction,
+  cancelOrderAction,
+  restockCancelledOrderAction,
+} from "@/app/(admin)/admin/orders/actions";
+import {
+  canCancel,
+  canRestockCancelled,
+  nextStatus,
+  nextStatusLabel,
+} from "@/lib/validation/fulfilment";
 import type { OrderChannel, OrderStatus } from "@/lib/types/database.types";
 
 /**
@@ -51,6 +60,43 @@ export function FulfilmentActions({
   const next = nextStatus(status);
   const label = nextStatusLabel(status);
   const cancellable = canCancel(status, channel);
+  const restockable = canRestockCancelled(status);
+
+  /**
+   * Return stock for a cancelled order.
+   *
+   * The three outcomes are all legitimate and each says something different, so
+   * none of them is reported as a plain success: stock returned, nothing left to
+   * return (this order was cancelled with restocking already on), or a refusal
+   * from the server. The button is not confirmed by a dialog because it is not
+   * destructive in the sense that matters — it returns stock the order already
+   * consumed, and the RPC will not do it twice.
+   */
+  async function restock() {
+    setAdvancing(true);
+    setError(null);
+    const result = await restockCancelledOrderAction({ orderId });
+    setAdvancing(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      toast(result.error, "error");
+      return;
+    }
+
+    const { restocked, alreadyRestocked } = result.data;
+    if (restocked > 0) {
+      toast(
+        `Returned ${restocked} ${restocked === 1 ? "product" : "products"} to stock.`,
+        "success",
+      );
+    } else if (alreadyRestocked > 0) {
+      toast(`${orderNumber}: the items were already back in stock.`, "error");
+    } else {
+      toast(`${orderNumber} has no linked products to return.`, "error");
+    }
+    router.refresh();
+  }
 
   async function advance(
     newStatus: OrderStatus,
@@ -100,6 +146,17 @@ export function FulfilmentActions({
           className="text-destructive hover:bg-destructive/10"
         >
           {status === "completed" ? "Reverse sale" : "Cancel"}
+        </Button>
+      ) : null}
+
+      {restockable ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={advancing}
+          onClick={() => void restock()}
+        >
+          Return items to stock
         </Button>
       ) : null}
 

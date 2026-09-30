@@ -260,7 +260,7 @@ products 1→* order_items (nullable link; snapshots preserved)
 
 - `inventory_stock.quantity >= 0` always; overselling is impossible.
 - Every stock change has exactly one movement, in the same transaction.
-- A sale is restocked at most once (partial unique index).
+- A sale is restocked at most once (partial unique index). `restock_cancelled_order` writes the same `order_cancel` movement type, so that index governs it too (D80).
 - Order totals are computed server-side inside the RPC; client-sent totals are ignored.
 - `orders`/`order_items`/`order_status_history`/`payments`/`inventory_*` are **RPC-write-only** (admin has SELECT). Stored totals and financial records cannot be hand-edited.
 - `unit_cost`/`unit_price` are snapshotted per line; later product or cost edits never rewrite historical profit.

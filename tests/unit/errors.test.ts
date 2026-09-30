@@ -36,6 +36,7 @@ const RAISED_CODES = [
   "not_authorized",
   "nothing_to_refund",
   "order_not_found",
+  "order_not_cancelled",
   "outside_reversal_window",
   "over_payment",
   "over_refund",

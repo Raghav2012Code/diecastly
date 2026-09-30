@@ -57,6 +57,7 @@ Actions map to RPCs: Confirm, **Mark Paid** (`record_payment`), Record Refund, P
 - **Representation:** recorded as a cancellation with reversal (`from_status = 'completed'` in `order_status_history`) — **not** a returns system.
 - **Ledger:** one `order_cancel` movement per item, source `admin`, note "in-person reversal".
 - **After the window:** no automated reversal. A genuine late return is handled as a manual `adjust_stock(return, +qty)` plus `refund_payment`. A full returns/exchanges flow is deferred to a future phase.
+- **Restocking a cancelled order:** a cancelled order whose cancellation was made with "Return the items to stock" **unticked** can be corrected from the same order row via **Return items to stock**. It restores the order's own line quantities (nothing is typed in), and a second press reports that the items are already back rather than doing it again. The order's status does not change — it stays cancelled, and only the stock and the movement ledger move.
 
 ## 7. Customer management
 

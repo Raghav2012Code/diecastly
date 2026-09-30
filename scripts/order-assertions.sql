@@ -1136,6 +1136,123 @@ begin
 end
 $$;
 
+-- ===========================================================================
+-- 15. An order cancelled WITHOUT restocking can be restocked afterwards.
+--
+--     The defect: cancel_order's restock loop is guarded by p_restock, and the
+--     function returns early for an order already cancelled — so a
+--     cancelled-without-restock order could never be restocked by reference
+--     again, and recovery was a manual adjust_stock with a typed-in number. That
+--     is the hole in D20's "one authoritative cancel/restock path".
+--
+--     Four claims, each with a control that would make it false:
+--       a. cancelling with p_restock = false leaves stock alone (the premise)
+--       b. restock_cancelled_order then returns it, by writing order_cancel
+--          movements — the type that carries the existing "restocked at most
+--          once" index
+--       c. calling it AGAIN changes nothing (the control for b: without it, a
+--          function that restocked unconditionally would pass b)
+--       d. calling it on a NOT-cancelled order is refused AND changes nothing
+--          (rejection alone would pass against a function that half-applied)
+-- ===========================================================================
+do $$
+declare
+  v_product constant uuid := '23000000-0000-0000-0000-000000000006';
+  v_order uuid;
+  v_before integer;
+  v_after_cancel integer;
+  v_res jsonb;
+  v_stock integer;
+  v_moves integer;
+  v_rejected boolean := false;
+begin
+  -- Fixture product and its opening stock, if this section runs first.
+  insert into public.products (id, name, slug, sku, selling_price, purchase_cost, status) values
+    (v_product, 'Restock Probe', 'asrt-restock-probe', 'RS-P', 100, 40, 'active')
+  on conflict (id) do nothing;
+  perform public.set_initial_stock(v_product, 20, 40);
+
+  select quantity into v_before from public.inventory_stock where product_id = v_product;
+
+  -- (a) Cancel WITHOUT restocking, and prove stock was left alone.
+  v_order := (public.record_in_person_sale(
+    '[{"productId":"23000000-0000-0000-0000-000000000006","quantity":4,"unitPrice":100}]'::jsonb,
+    'cash'::public.payment_method, null, null, null, 'asrt-restock-probe-sale'::text
+  ) ->> 'order_id')::uuid;
+
+  perform public.cancel_order(v_order, 'assertion: no restock', false, false, null);
+
+  select quantity into v_after_cancel from public.inventory_stock where product_id = v_product;
+  if v_after_cancel <> v_before - 4 then
+    raise exception 'FAIL control: cancel with restock=false left stock at %, expected %',
+      v_after_cancel, v_before - 4;
+  end if;
+
+  -- (b) Now restock it by reference.
+  v_res := public.restock_cancelled_order(v_order);
+
+  if (v_res ->> 'restocked_products')::integer <> 1 then
+    raise exception 'FAIL restocked_products is %, expected 1', v_res ->> 'restocked_products';
+  end if;
+
+  select quantity into v_stock from public.inventory_stock where product_id = v_product;
+  if v_stock <> v_before then
+    raise exception 'FAIL stock is % after restocking, expected the original %', v_stock, v_before;
+  end if;
+
+  select count(*) into v_moves from public.inventory_movements
+   where reference_id = v_order and movement_type = 'order_cancel';
+  if v_moves <> 1 then
+    raise exception 'FAIL expected exactly 1 order_cancel movement, found %', v_moves;
+  end if;
+
+  -- (c) The control for (b): a second call must change nothing.
+  v_res := public.restock_cancelled_order(v_order);
+  if (v_res ->> 'restocked_products')::integer <> 0 then
+    raise exception 'FAIL a second restock applied % product(s) again',
+      v_res ->> 'restocked_products';
+  end if;
+  if (v_res ->> 'already_restocked_products')::integer <> 1 then
+    raise exception 'FAIL the repeat did not report 1 already-restocked product, got %',
+      v_res ->> 'already_restocked_products';
+  end if;
+  select quantity into v_stock from public.inventory_stock where product_id = v_product;
+  if v_stock <> v_before then
+    raise exception 'FAIL a repeat restock moved stock to %, expected %', v_stock, v_before;
+  end if;
+  select count(*) into v_moves from public.inventory_movements
+   where reference_id = v_order and movement_type = 'order_cancel';
+  if v_moves <> 1 then
+    raise exception 'FAIL a repeat restock wrote a second movement: % rows', v_moves;
+  end if;
+
+  -- (d) Refused for a live order, and nothing changed.
+  select public.record_in_person_sale(
+    '[{"productId":"23000000-0000-0000-0000-000000000006","quantity":1,"unitPrice":100}]'::jsonb,
+    'cash'::public.payment_method, null, null, null, 'asrt-restock-probe-live'::text
+  ) ->> 'order_id' into v_order;
+  v_order := v_order::uuid;
+
+  select quantity into v_stock from public.inventory_stock where product_id = v_product;
+  v_before := v_stock;
+
+  begin
+    perform public.restock_cancelled_order(v_order);
+  exception when others then
+    v_rejected := true;
+  end;
+  if not v_rejected then
+    raise exception 'FAIL restocking a live (not cancelled) order was accepted';
+  end if;
+  select quantity into v_stock from public.inventory_stock where product_id = v_product;
+  if v_stock <> v_before then
+    raise exception 'FAIL a refused restock still moved stock from % to %', v_before, v_stock;
+  end if;
+
+  raise notice 'PASS a cancelled-without-restock order is restockable exactly once, by reference';
+end
+$$;
+
 -- RAISE NOTICE is invisible in single-user mode; the success signal is a SELECT
 -- because single-user echoes result rows to stdout.
 select 'ALL ASSERTIONS PASSED' as result;

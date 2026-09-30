@@ -395,6 +395,37 @@ export async function updateOrderNotes(
   return ok(data as OrderMutationResult);
 }
 
+/**
+ * Restock an order that was cancelled WITHOUT restocking.
+ *
+ * The correction path for the case `cancelOrder` cannot revisit: a cancelled
+ * order returns early on re-cancel, so an order cancelled with `restock: false`
+ * had no way back except a manual `adjustStock` with a typed-in quantity. See
+ * D80.
+ */
+export type RestockCancelledResult = {
+  order_id: string;
+  order_number: string;
+  restocked_products: number;
+  already_restocked_products: number;
+  products: {
+    product_id: string;
+    quantity: number;
+    quantity_after: number;
+  }[];
+};
+
+export async function restockCancelledOrder(
+  client: Client,
+  args: { orderId: string },
+): Promise<Result<RestockCancelledResult>> {
+  const { data, error } = await client.rpc("restock_cancelled_order", {
+    p_order_id: args.orderId,
+  });
+  if (error) return fail(error);
+  return ok(data as RestockCancelledResult);
+}
+
 // ---------------------------------------------------------------------------
 // Product images
 //

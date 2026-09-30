@@ -5,11 +5,12 @@ import { createClient } from "@/lib/supabase/server";
 import { fromFriendly, fromZod, type ActionResult } from "@/lib/action-result";
 import { recordPayment, refundPayment } from "@/lib/db/rpc";
 import { recordPaymentSchema, refundPaymentSchema } from "@/lib/validation/order";
-import { updateOrderStatus, cancelOrder } from "@/lib/db/rpc";
+import { updateOrderStatus, cancelOrder, restockCancelledOrder } from "@/lib/db/rpc";
 import { actionError } from "@/lib/action-result";
 import {
   advanceOrderSchema,
   cancelOrderSchema,
+  restockCancelledSchema,
   nextStatus,
   type ForwardStatus,
 } from "@/lib/validation/fulfilment";
@@ -137,4 +138,43 @@ export async function cancelOrderAction(input: unknown): Promise<ActionResult<nu
 
   revalidateOrder(parsed.data.orderId);
   return { ok: true, data: null };
+}
+
+/**
+ * Return stock for an order that was cancelled without restocking.
+ *
+ * The correction path. `cancel_order` returns early for an order already in a
+ * terminal state and its restock loop is gated on the same `p_restock` flag the
+ * admin just un-ticked, so this could not be reached by cancelling again — only
+ * by a manual adjustment with a typed-in number. See D80.
+ *
+ * Returns the counts rather than a bare null so the UI can say what happened: a
+ * repeat call legitimately reports 0 restocked, which is a no-op the admin
+ * should see as "already returned" rather than as a silent success.
+ */
+export async function restockCancelledOrderAction(
+  input: unknown,
+): Promise<ActionResult<{ restocked: number; alreadyRestocked: number }>> {
+  const parsed = restockCancelledSchema.safeParse(input);
+  if (!parsed.success) return fromZod(parsed.error);
+
+  const supabase = await createClient();
+  const result = await restockCancelledOrder(supabase, { orderId: parsed.data.orderId });
+
+  if (!result.ok) {
+    return { ok: false, error: result.error.message, field: result.error.field };
+  }
+
+  revalidateOrder(parsed.data.orderId);
+  // Stock changed, so the inventory list and its movement ledger are stale too.
+  revalidatePath("/admin/inventory");
+  revalidatePath("/admin/inventory/movements");
+
+  return {
+    ok: true,
+    data: {
+      restocked: result.data.restocked_products,
+      alreadyRestocked: result.data.already_restocked_products,
+    },
+  };
 }

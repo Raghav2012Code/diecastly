@@ -102,5 +102,32 @@ export const cancelOrderSchema = z.object({
   refund: z.boolean().default(true),
 });
 
+/**
+ * Restocking an order that was cancelled without restocking.
+ *
+ * Only the order id: there is nothing to choose. The quantity is the order's own
+ * line quantities summed per product, computed in the RPC, so an admin cannot
+ * type a number that disagrees with what was sold — which is exactly the manual
+ * `adjust_stock` recovery this replaces.
+ */
+export const restockCancelledSchema = z.object({
+  orderId: z.string().uuid(),
+});
+
+/**
+ * Whether an order can still have its stock returned.
+ *
+ * Cancellation is the only path to a cancelled order, and the RPC is the
+ * authority — but a `cancelled` order that was cancelled WITH restocking has
+ * nothing left to do, and offering the button there would invite an admin to
+ * press a button that can only ever report zero. The button is offered whenever
+ * the order is cancelled; the RPC answers the rest, and a repeat is a clean
+ * no-op rather than an error.
+ */
+export function canRestockCancelled(status: OrderStatus): boolean {
+  return status === "cancelled";
+}
+
 export type AdvanceOrderInput = z.infer<typeof advanceOrderSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
+export type RestockCancelledInput = z.infer<typeof restockCancelledSchema>;

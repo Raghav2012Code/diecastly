@@ -70,6 +70,7 @@ const MESSAGES: Array<[string, string]> = [
   ["invalid_transition", "That status change is not allowed from where the order is now."],
   ["use_cancel_order", "Cancel the order instead of changing its status."],
   ["outside_reversal_window", "This sale is outside the in-person reversal window."],
+  ["order_not_cancelled", "Only a cancelled order can be restocked."],
   // Payments
   ["invalid_payment", "Enter an amount greater than zero."],
   ["over_payment", "That is more than the outstanding balance."],

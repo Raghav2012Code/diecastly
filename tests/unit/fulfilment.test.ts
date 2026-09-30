@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   advanceOrderSchema,
+  canRestockCancelled,
   canCancel,
   cancelOrderSchema,
   isFulfilmentLocked,
+  restockCancelledSchema,
   nextStatus,
   nextStatusLabel,
 } from "@/lib/validation/fulfilment";
@@ -111,13 +113,21 @@ describe("advanceOrderSchema", () => {
 
   // The SQL raises use_cancel_order for both, so the form must not offer them.
   it("refuses cancelled and returned as a target", () => {
-    expect(advanceOrderSchema.safeParse({ orderId: UUID, newStatus: "cancelled" }).success).toBe(false);
-    expect(advanceOrderSchema.safeParse({ orderId: UUID, newStatus: "returned" }).success).toBe(false);
+    expect(advanceOrderSchema.safeParse({ orderId: UUID, newStatus: "cancelled" }).success).toBe(
+      false,
+    );
+    expect(advanceOrderSchema.safeParse({ orderId: UUID, newStatus: "returned" }).success).toBe(
+      false,
+    );
   });
 
   it("refuses a nonsense status and a non-uuid order", () => {
-    expect(advanceOrderSchema.safeParse({ orderId: UUID, newStatus: "teleported" }).success).toBe(false);
-    expect(advanceOrderSchema.safeParse({ orderId: "nope", newStatus: "confirmed" }).success).toBe(false);
+    expect(advanceOrderSchema.safeParse({ orderId: UUID, newStatus: "teleported" }).success).toBe(
+      false,
+    );
+    expect(advanceOrderSchema.safeParse({ orderId: "nope", newStatus: "confirmed" }).success).toBe(
+      false,
+    );
   });
 
   it("caps the optional fields so a long note cannot be sent", () => {
@@ -126,8 +136,11 @@ describe("advanceOrderSchema", () => {
         .success,
     ).toBe(false);
     expect(
-      advanceOrderSchema.safeParse({ orderId: UUID, newStatus: "shipped", tracking: "x".repeat(200) })
-        .success,
+      advanceOrderSchema.safeParse({
+        orderId: UUID,
+        newStatus: "shipped",
+        tracking: "x".repeat(200),
+      }).success,
     ).toBe(false);
   });
 });
@@ -136,13 +149,15 @@ describe("cancelOrderSchema", () => {
   it("requires a reason, because it goes on the order's history", () => {
     expect(cancelOrderSchema.safeParse({ orderId: UUID, reason: "" }).success).toBe(false);
     expect(cancelOrderSchema.safeParse({ orderId: UUID, reason: "ab" }).success).toBe(false);
-    expect(cancelOrderSchema.safeParse({ orderId: UUID, reason: "customer asked" }).success).toBe(true);
+    expect(cancelOrderSchema.safeParse({ orderId: UUID, reason: "customer asked" }).success).toBe(
+      true,
+    );
   });
 
   it("caps the reason length", () => {
-    expect(
-      cancelOrderSchema.safeParse({ orderId: UUID, reason: "x".repeat(301) }).success,
-    ).toBe(false);
+    expect(cancelOrderSchema.safeParse({ orderId: UUID, reason: "x".repeat(301) }).success).toBe(
+      false,
+    );
   });
 
   // A cancelled order is usually one the customer did not want, so both default on.
@@ -150,5 +165,38 @@ describe("cancelOrderSchema", () => {
     const parsed = cancelOrderSchema.parse({ orderId: UUID, reason: "customer asked" });
     expect(parsed.restock).toBe(true);
     expect(parsed.refund).toBe(true);
+  });
+});
+
+describe("canRestockCancelled", () => {
+  it("is offered only for a cancelled order", () => {
+    // Everything else is refused by the RPC with order_not_cancelled, but
+    // offering a button that can only ever fail is worse than not offering it.
+    for (const status of ORDER_STATUSES) {
+      expect(canRestockCancelled(status)).toBe(status === "cancelled");
+    }
+  });
+
+  it("is not offered for a RETURNED order", () => {
+    // `returned` is the other terminal state. A returned order was not
+    // cancelled, so cancel_order never restocked it, and this RPC is explicitly
+    // scoped to cancellations rather than becoming a general "put stock back"
+    // door into the ledger.
+    expect(canRestockCancelled("returned")).toBe(false);
+  });
+});
+
+describe("restockCancelledSchema", () => {
+  it("takes only the order id � there is nothing for the admin to choose", () => {
+    // The quantity is the order's own line quantities summed per product,
+    // computed in the RPC. Accepting a quantity here would recreate the manual
+    // typed-in recovery this replaces.
+    const parsed = restockCancelledSchema.safeParse({ orderId: UUID });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(Object.keys(parsed.data)).toEqual(["orderId"]);
+
+    expect(restockCancelledSchema.safeParse({ orderId: UUID, quantity: 5 }).success).toBe(true);
+    expect(restockCancelledSchema.safeParse({ orderId: "nope" }).success).toBe(false);
+    expect(restockCancelledSchema.safeParse({}).success).toBe(false);
   });
 });
