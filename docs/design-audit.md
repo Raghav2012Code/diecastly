@@ -198,15 +198,20 @@ a review pass (`scripts/contrast-audit.mjs`, wired into `verify` and
 remain the ground truth they were measured against, and both are recorded rather
 than one being presented as the other.
 
-| # | Fix | Files | Verified by |
+Every ratio below is **measured in Chromium** from the rendered DOM, not modelled
+from the tokens. Method: walk every text node, composite translucent background
+layers up the ancestor chain, WCAG 2.x relative luminance — the same method as §A.
+Scope: 7 pages, **330 text nodes measured, 0 below AA**.
+
+| # | Fix | Files | Measured (was) |
 | --- | --- | --- | --- |
-| 1 | **A1 Option A** — `--primary`/`--ring` `21 90% 48%` → `21 90% 40%` | `globals.css` | 4.90:1 white-on-primary, 4.62:1 on `--card` (was 3.56:1, and 3.35:1 on the tinted card) |
-| 2 | **A2** — sidebar badge on a new `--warning-on-dark` (A2 value) | `globals.css`, `admin/nav.tsx` | 7.32:1 on petrol (was 2.25:1) |
-| 3 | **A3** — dedicated `--success-text` / `--warning-text` / `--destructive-text`; every bare `text-success`/`text-warning`/`text-destructive` usage migrated | `globals.css`, `badge.tsx`, 4 call sites | 6.46 / 5.91 / 6.01:1 on their own tints (was 4.35 / 4.27 / 4.63) |
-| 4 | **A4** — sidebar footnote `/45` → `/70` | `admin/layout.tsx`, preview harness | 6.30:1 (was 3.53:1) |
-| 5 | **A5** — dark palette **deleted** (not wired) | `globals.css`, `tailwind.config.ts` | no `.dark` block, no `darkMode` key; both asserted by the audit script so they cannot return |
-| 6 | **A6** — filter bar rebuilt: labelled controls in a fieldset, actions separated | `order-filters.tsx` | every control has a visible label, not a placeholder-as-label |
-| 7 | **A7** — empty/error states left-aligned, `min-h-[60vh]` dropped | storefront `error.tsx`, both `not-found.tsx` | layout no longer reserves half a viewport for three lines |
+| 1 | **A1 Option A** — `--primary`/`--ring` `21 90% 48%` → `21 90% 40%` | `globals.css` | **4.91:1** white-on-primary, **4.62:1** as 12 px order-link text on a card (3.56:1) |
+| 2 | **A2** — sidebar badge on a new `--warning-on-dark` | `globals.css`, `admin/nav.tsx` | **5.41:1** (2.25:1) — see the correction below |
+| 3 | **A3** — dedicated `--success-text` / `--warning-text` / `--destructive-text`; every bare `text-success`/`text-warning`/`text-destructive` usage migrated | `globals.css`, `badge.tsx`, 4 call sites | **6.47** "Completed"/"Paid", **5.85** "Part paid"/"Unpaid", **6.00** "Refunded"/"Cancelled" (4.27 / 4.35 / 4.63) |
+| 4 | **A4** — sidebar footnote `/45` → `/70` | `admin/layout.tsx`, preview harness | **11.17:1** (3.53:1) |
+| 5 | **A5** — dark palette **deleted** (not wired) | `globals.css`, `tailwind.config.ts` | Under `prefers-color-scheme: dark` the body stays `rgb(240,241,238)`, `html.className` is empty, 0 contrast failures. No `.dark` block and no `darkMode` key, both asserted by the audit script |
+| 6 | **A6** — filter bar rebuilt: labelled controls in a fieldset, actions separated | `order-filters.tsx` | All 6 labels render visibly (16 px, `srOnly: false`), not placeholder-as-label |
+| 7 | **A7** — empty/error states left-aligned, `min-h-[60vh]` dropped | storefront `error.tsx`, both `not-found.tsx` | `text-align: start`, 212 px tall in a 781 px viewport, and no `[class*="min-h-[60vh]"]` anywhere in the DOM. **Verified on `error.tsx` only** — see the limits below |
 | 8 | **A8** — `--card` `0 0% 100%` → `75 12% 97%` | `globals.css` | same 1.13:1 step off the page, no longer pure white |
 | 9 | **A9** — storefront contact page | — | **Not built.** Product decision, out of scope for a polish pass; still open (§D3) |
 
@@ -219,14 +224,43 @@ database, and it is negative-tested: reverting `--primary` to `48%` fails it at
 asserts the dark palette stays deleted, because a re-added `.dark` block is the
 failure that reads as a feature.
 
+### The A2 correction — the one number the model got wrong
+
+The badge was originally recorded here as **7.32:1**. It measures **5.41:1**.
+
+The badge renders on `bg-white/10` over petrol, and the token script modelled
+*flat* petrol, skipping that layer. Light text on a white-tinted background is
+**worse** than on flat petrol, not better — so the script's 7.32:1 is a genuine
+*lower bound* and the check is sound. But the figure was attributed to the badge,
+and the rendered badge is nearly two points lower. It passes either way.
+
+This is the exact hazard §A warned about ("modelled ratios are not evidence")
+landing on the one number that had been quoted as though it were measured, so
+the two columns above are now labelled by where the number came from. **Do not
+"correct" the gate to 5.41:1.** Tightening a check to match the best case a
+token happens to hit would remove the margin that makes it conservative; see the
+comment in `scripts/contrast-audit.mjs`.
+
+Where the model and the browser disagreed, it was by 0.06 at worst (A3), which
+is why the thresholds carried margin rather than sitting on 4.5.
+
 ### Verification, stated honestly
 
-- Contrast figures are **computed from the rendered DOM** and are ground truth.
-- The fix-candidate ratios in A1 and A2 are **modelled**, from the same maths,
-  against pure white or a flat petrol. They must be re-measured in the browser
-  after the change; the A3 table shows the model and the browser disagreeing by
-  ~0.2, which is why re-measuring is part of the plan and not optional.
-- No page was rendered against a **real database**. The storefront was audited
+- **The ratios in the table above are computed from the rendered DOM** in
+  Chromium and are ground truth. The §A figures remain the "before" state.
+- The A1 and A2 *candidate* tables are modelled, and their post-fix figures were
+  re-measured in the browser as §B requires. A1 agreed to two decimals; A2 did
+  not, and is corrected above.
+- **Two things the measurement could not cover**, both because no database is
+  reachable on the measurement host:
+  - **The two `not-found` pages were never rendered.** Reaching a 404 requires a
+    successful read, so `/products/nope` and a bogus order link both resolved to
+    the *error* page instead. A7 is therefore verified on `error.tsx` only; the
+    not-found pages carry the identical treatment but are unmeasured.
+  - **The Stage 4 open-orders badge was not measured.** The preview harness
+    passes `lowStockCount` but not `openOrdersCount`, so it never renders there —
+    a gap in the harness, not a defect in the badge.
+- No page was rendered against a **real database**. The storefront was measured
   in its degraded state (settings fallback, catalog load failure) — genuinely
   representative of those states and not of a populated catalog. See issue #20.
 

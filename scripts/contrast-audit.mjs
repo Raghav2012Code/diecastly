@@ -17,10 +17,14 @@
  *   A5  no `.dark` block in globals.css and no `darkMode` key in
  *       tailwind.config.ts (dead palette deleted, not wired)
  *
- * Modelled ratios disagree with the browser by ~0.2 (audit §B), so every
- * threshold carries margin: token values were chosen so the modelled figure
- * clears 4.5 with room, and any re-measure in the browser is recorded in the
- * commit. A8 (--card off pure white) is visual and intentionally ungated.
+ * Modelled ratios disagree with the browser by ~0.06 at worst, and once by much
+ * more: the A2 badge is checked here against FLAT petrol, but it actually renders
+ * on `bg-white/10` over petrol and measures 5.41:1, not the 7.32:1 below. That is
+ * deliberate. Light text on a white-tinted background is worse than on flat
+ * petrol, so this is a lower bound — do NOT "correct" it to the measured 5.41:1,
+ * because tightening a check to the best case a token happens to hit destroys
+ * the margin that makes it conservative. Measured figures are in
+ * docs/design-audit.md §B. A8 (--card off pure white) is visual and ungated.
  *
  * Usage: `node scripts/contrast-audit.mjs [--root <repo-root>]`
  * Exit 0 when every check passes, 1 with FAIL lines otherwise.
