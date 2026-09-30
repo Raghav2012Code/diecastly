@@ -2,9 +2,11 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ToastProvider } from "@/components/ui/toast";
 import { OrderFilters } from "@/components/admin/order-filters";
 import { OrdersTable } from "@/components/admin/orders-table";
+import { OpenOrdersQueue } from "@/components/admin/open-orders-queue";
 import { OrderDetailView } from "@/components/admin/order-detail-view";
 import { OrderReceipt } from "@/components/admin/order-receipt";
 import { PosScreen } from "@/app/(admin)/admin/pos/pos-screen";
@@ -28,6 +30,7 @@ type SearchParams = Promise<{ screen?: string; order?: string }>;
 
 const SCREENS = [
   { key: "admin", label: "Admin shell" },
+  { key: "queue", label: "Pending queue" },
   { key: "pos", label: "Record Sale" },
   { key: "orders", label: "Orders" },
   { key: "order", label: "Order detail" },
@@ -95,7 +98,27 @@ export default async function PreviewPage({ searchParams }: { searchParams: Sear
 
       <ToastProvider>
         <div className="mx-auto max-w-[1400px] px-4 py-6">
-          {screen === "admin" ? (
+          {screen === "queue" ? (
+            // The Stage 4 pending-order queue. The sample deadlines are both in
+            // the past, so this renders the OVERDUE treatment — the case worth
+            // looking at, since a quietly-passed hold is the whole reason the
+            // queue exists.
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Pending-order queue</CardTitle>
+                <CardDescription>
+                  Unfulfilled orders, oldest first, with the stock-hold deadline.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <OpenOrdersQueue
+                  rows={sampleSummaries.filter((row) =>
+                    ["pending", "confirmed", "packed"].includes(row.status),
+                  )}
+                />
+              </CardContent>
+            </Card>
+          ) : screen === "admin" ? (
             <div className="overflow-hidden rounded-lg border border-border">
               <p className="border-b border-border bg-secondary/40 px-4 py-2 text-xs text-muted-foreground">
                 The real admin layout chrome. Resize below 768px: the sidebar is
@@ -116,7 +139,7 @@ export default async function PreviewPage({ searchParams }: { searchParams: Sear
                     </div>
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-                    <AdminNav lowStockCount={9} />
+                    <AdminNav lowStockCount={9} openOrdersCount={3} />
                   </div>
                   <p className="px-5 py-4 text-[11px] text-petrol-foreground/70">
                     Stock moves only through the ledger.
@@ -135,7 +158,7 @@ export default async function PreviewPage({ searchParams }: { searchParams: Sear
                     </div>
                   </header>
                   <div className="border-b border-border bg-petrol px-3 py-2 print:hidden md:hidden">
-                    <AdminNav orientation="bar" lowStockCount={9} />
+                    <AdminNav orientation="bar" lowStockCount={9} openOrdersCount={3} />
                   </div>
 
                   <main className="min-w-0 flex-1 px-4 py-6 print:p-0 md:px-6">

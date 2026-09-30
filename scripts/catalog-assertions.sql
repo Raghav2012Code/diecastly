@@ -480,6 +480,90 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- 11. anon cannot ENUMERATE the storage bucket.
+--
+--     The defect this closes. security.md §3 justifies the gallery view by
+--     saying a widened grant on product_images "would expose every column of
+--     every image row for every product, including drafts and archived
+--     products, whose photography must stay private". The view filters to
+--     status = 'active', so it keeps that promise. But the bucket is
+--     `public = true` and 20260925120700's select policy admitted every row in
+--     the bucket to `anon`, which authorises the Storage API's object-listing
+--     endpoint. So the same promise was broken one layer up: anon could list
+--     every image path in the bucket, and read any of them by URL, without ever
+--     touching the view. The view's row filter was doing nothing for the
+--     surface that actually served the files.
+--
+--     Three claims, each with a control that would make it false:
+--       a. anon sees NOTHING belonging to a draft or archived product (the fix)
+--       b. anon still sees an ACTIVE product's images (the control — without
+--          it, "anon sees nothing" would pass against a bucket broken for
+--          everyone, which is a worse outage than the leak)
+--       c. authenticated still sees the draft images, because the admin has to
+--          be able to preview a draft before publishing it
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_leaked text;
+  v_active integer;
+  v_as_admin integer;
+begin
+  -- The storage rows a real upload would create. productImageObjectPath() stores
+  -- the same string in product_images.storage_path, and .upload(path, ...) makes
+  -- it storage.objects.name — so the two are joined on identity.
+  insert into storage.objects (bucket_id, name) values
+    ('product-images', 'gallery/active-1.png'),
+    ('product-images', 'gallery/active-2.png'),
+    ('product-images', 'gallery/draft-1.png'),
+    ('product-images', 'gallery/archived-1.png')
+  on conflict do nothing;
+
+  -- (a) + (b) as an anonymous visitor. Listing the bucket is exactly what the
+  -- Storage API does; note this reads only storage.objects, because anon has no
+  -- grant on public.product_images and must not acquire one to be tested here.
+  perform set_config('request.jwt.claims', '{}', false);
+  set local role anon;
+
+  select string_agg(distinct o.name, ',') into v_leaked
+    from storage.objects o
+   where o.bucket_id = 'product-images'
+     and (o.name like 'gallery/draft%' or o.name like 'gallery/archived%');
+
+  if v_leaked is not null then
+    raise exception 'FAIL anon can enumerate images of a non-active product: %', v_leaked;
+  end if;
+
+  select count(*) into v_active
+    from storage.objects o
+   where o.bucket_id = 'product-images'
+     and o.name in ('gallery/active-1.png', 'gallery/active-2.png');
+
+  if v_active <> 2 then
+    raise exception 'FAIL control: anon sees % of the active product''s 2 images, expected 2', v_active;
+  end if;
+
+  reset role;
+
+  -- (c) An admin previewing a draft before publishing it.
+  perform set_config('request.jwt.claims',
+    '{"sub":"00000000-0000-0000-0000-0000000000c2","role":"authenticated"}', false);
+  set local role authenticated;
+
+  select count(*) into v_as_admin
+    from storage.objects o
+   where o.bucket_id = 'product-images'
+     and o.name = 'gallery/draft-1.png';
+
+  if v_as_admin <> 1 then
+    raise exception 'FAIL control: an admin cannot see a draft''s image, so it cannot be previewed';
+  end if;
+
+  reset role;
+  raise notice 'PASS anon cannot enumerate non-active images, active ones still resolve, admin still sees drafts';
+end
+$$;
+
 -- RAISE NOTICE is invisible in single-user mode; the success signal is a SELECT
 -- because single-user echoes result rows to stdout.
 select 'ALL ASSERTIONS PASSED' as result;

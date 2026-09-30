@@ -41,6 +41,10 @@ Public views (`v_products_public`, `v_product_images_public`, `v_categories_publ
 
 `v_product_images_public` exists because the product gallery needs every image, not just the primary one, and `v_products_public` carries only `primary_image_path`. It is a separate view rather than a widened grant on `product_images`: granting anon that table would expose every column of every image row for every product, **including drafts and archived products**, whose photography must stay private. The view filters to `status = 'active'` products, and both that filter and the grant are asserted in `scripts/catalog-assertions.sql` — a new object reachable by anon is a new public surface, so it is tested rather than assumed.
 
+**The view alone did not keep that promise.** The `product-images` bucket is `public = true`, and the SELECT policy on `storage.objects` admitted every row in the bucket to `anon` — which is what authorises the Storage API's object-listing endpoint. So anon could list every image path, including draft and archived products', and read any of them by URL without ever touching the view. The row filter was doing nothing for the surface that actually served the files. `20260929110000` narrows the anon policy to objects that do not belong to a non-active product, via `public.is_listable_product_image()` — a `security definer` helper, because a policy expression is evaluated as the invoking role and `anon` has no grant on `product_images` (measured: the direct `exists` form fails with *permission denied for table product_images*). `authenticated` keeps an unfiltered policy, because an admin must be able to list and preview a draft before publishing it.
+
+**What that does and does not achieve:** it removes *enumerability*. The bucket is public, so anyone who already knows a path can still fetch the bytes, and no RLS policy gates that. Listing is the practical way a path becomes known, so closing it closes the practical exposure — but "unlistable" is not "private". Genuinely private draft photography would need a non-public bucket, which changes storefront delivery as well (no CDN, signed URLs) and is a product decision, not a hardening fix.
+
 ## 4. Security-definer function requirements
 
 Every RPC must:
@@ -96,7 +100,7 @@ Each RPC invocation is one implicit transaction; any `RAISE` rolls back everythi
 
 ## 7. Storage security
 
-- Bucket `product-images`: public **read**, admin-only **write**/update/delete (storage policy keyed to `is_admin()`).
+- Bucket `product-images`: public **read**, admin-only **write**/update/delete (storage policy keyed to `is_admin()`). Anon **listing** is filtered to active products' images — see §3.
 - Uploads validated by content type and size; paths are server-generated to avoid collisions.
 - No customer-uploaded content exists in v1. UPI payment screenshots are referenced by note/reference only — no public bucket.
 

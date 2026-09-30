@@ -98,3 +98,17 @@ create table if not exists storage.objects (
 create index if not exists storage_objects_bucket_idx on storage.objects (bucket_id);
 
 alter table storage.objects enable row level security;
+
+-- The grants Supabase's own bootstrap provides for the Storage API. Without
+-- them the four storage RLS policies in 20260925120700 are INERT here: `anon`
+-- cannot even reach the schema, so any assertion about what anon can or cannot
+-- see in storage.objects passes for the wrong reason.
+--
+-- This was found by trying to assert the draft-image leak and getting
+-- "permission denied for schema storage" — which proved the harness, not the
+-- policy, was the thing being measured. Granting them is what makes the
+-- policies testable; `authenticated` on the same terms so the admin-preview
+-- control is real too.
+grant usage on schema storage to anon, authenticated;
+grant select on storage.objects to anon, authenticated;
+grant select on storage.buckets to anon, authenticated;
