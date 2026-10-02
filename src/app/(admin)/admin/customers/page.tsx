@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -74,12 +75,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
             placeholder="Search name, phone or email"
           />
         </div>
-        <button
-          type="submit"
-          className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
-        >
+        <Button type="submit">
           Search
-        </button>
+        </Button>
         {search ? (
           <Link
             href="/admin/customers"

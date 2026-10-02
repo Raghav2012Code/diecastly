@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 /**
  * Storefront error boundary.
@@ -36,9 +36,9 @@ export default function StoreError({
         catalog.
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={reset} className={buttonVariants()}>
+        <Button type="button" onClick={reset}>
           Try again
-        </button>
+        </Button>
         <Link href="/" className={buttonVariants({ variant: "outline" })}>
           Back to the catalog
         </Link>
