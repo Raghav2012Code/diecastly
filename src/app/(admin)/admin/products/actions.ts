@@ -108,7 +108,7 @@ export async function registerProductImageAction(input: unknown): Promise<Action
 export async function deleteProductImageAction(
   imageId: string,
   productId: string,
-): Promise<ActionResult<null>> {
+): Promise<ActionResult<{ orphanedPath: string | null }>> {
   const parsed = z.object({ imageId: uuidSchema, productId: uuidSchema }).safeParse({ imageId, productId });
   if (!parsed.success) return fromZod(parsed.error);
 
@@ -116,7 +116,10 @@ export async function deleteProductImageAction(
   if (!deleted.ok) return fromFriendly(deleted.error);
 
   revalidateCatalog(productId);
-  return { ok: true, data: null };
+  // The row is deleted either way. `orphanedPath` set means the row went and the
+  // FILE did not, which is reported rather than treated as a failed delete —
+  // retrying would find nothing to delete.
+  return { ok: true, data: deleted.data };
 }
 
 export async function setPrimaryImageAction(

@@ -147,7 +147,14 @@ export function ProductImages({
       setBusy(false);
       setPendingDelete(null);
       if (result.ok) {
-        toast("Image deleted", "success");
+        if (result.data.orphanedPath) {
+          toast(
+            "Image deleted, but the file could not be removed from storage. Nothing to retry — the reference is gone.",
+            "error",
+          );
+        } else {
+          toast("Image deleted", "success");
+        }
         router.refresh();
       } else {
         toast(result.error, "error");

@@ -69,6 +69,9 @@ describe("raised codes are translated", () => {
       "20260926120300_image_ordering_atomicity.sql",
     );
     expect(raised.get("over_payment")).toContain("20260926120600_payment_guards.sql");
+    expect(raised.get("no_access_token")).toContain(
+      "20261003120000_order_access_token_rotation.sql",
+    );
   });
 
   it("gives every code the migrations raise a specific, non-generic message", () => {

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { fail, ok, type Result } from "./errors";
+import type { ProductImageRow } from "@/lib/types/database.types";
 import type {
   DerivedPaymentStatus,
   ManualMovementType,
@@ -426,6 +427,31 @@ export async function restockCancelledOrder(
   return ok(data as RestockCancelledResult);
 }
 
+/**
+ * Replaces an order's guest access token and returns the new one.
+ *
+ * The only call that reads a token out after creation. A leaked link keeps
+ * working until this runs, so the returned token is the whole point and the
+ * caller must show it immediately for copying — no list or detail payload
+ * carries it (security.md §6).
+ */
+export type RotateOrderAccessTokenResult = {
+  order_id: string;
+  order_number: string;
+  access_token: string;
+};
+
+export async function rotateOrderAccessToken(
+  client: Client,
+  args: { orderId: string },
+): Promise<Result<RotateOrderAccessTokenResult>> {
+  const { data, error } = await client.rpc("rotate_order_access_token", {
+    p_order_id: args.orderId,
+  });
+  if (error) return fail(error);
+  return ok(data as RotateOrderAccessTokenResult);
+}
+
 // ---------------------------------------------------------------------------
 // Product images
 //
@@ -443,6 +469,30 @@ export async function restockCancelledOrder(
 //
 // A plpgsql function body is one transaction, so each is now all-or-nothing.
 // ---------------------------------------------------------------------------
+
+/**
+ * Appends an image to a product's gallery at the next free `sort_order`.
+ *
+ * An RPC rather than a client read-then-insert for the same reason as the three
+ * above (D47): the ordering was previously computed by SELECTing the current
+ * maximum and adding one, which two concurrent uploads can both do, producing
+ * two rows that claim the same position. `add_product_image` takes a row lock on
+ * the product first, so "read the maximum" and "insert that row" are one
+ * transaction. The client's storage upload still happens beforehand and cannot
+ * join it — see `addProductImage` in lib/catalog/data.ts.
+ */
+export async function addProductImage(
+  client: Client,
+  args: { productId: string; storagePath: string; altText?: string | null },
+): Promise<Result<ProductImageRow>> {
+  const { data, error } = await client.rpc("add_product_image", {
+    p_product_id: args.productId,
+    p_storage_path: args.storagePath,
+    p_alt_text: args.altText ?? null,
+  });
+  if (error) return fail(error);
+  return ok(data as ProductImageRow);
+}
 
 /** Makes imageId the product's primary image. Exactly one primary afterwards. */
 export async function setPrimaryImage(

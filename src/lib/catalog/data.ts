@@ -525,39 +525,17 @@ export async function addProductImage(input: {
 }): Promise<Result<ProductImageRow>> {
   const supabase = await createClient();
 
-  // The error is checked, not swallowed. If this read fails, `last` is null,
-  // nextOrder becomes 0, and the insert below SUCCEEDS with a sort_order that
-  // collides with the product's existing first image — reintroducing outside the
-  // RPC exactly the duplicate ordering `reorder_product_images` exists to
-  // prevent, invisibly: the read failure never surfaced because the write that
-  // followed it worked.
-  const { data: last, error: probeError } = await supabase
-    .from("product_images")
-    .select("sort_order")
-    .eq("product_id", input.productId)
-    .order("sort_order", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (probeError) return fail(probeError);
-
-  // -1 is correct only for a product with no images at all, which is now
-  // distinguishable from a failed read because the error above returns.
-  const nextOrder = ((last as { sort_order: number } | null)?.sort_order ?? -1) + 1;
-
-  const { data, error } = await supabase
-    .from("product_images")
-    .insert({
-      product_id: input.productId,
-      storage_path: input.storagePath,
-      alt_text: input.altText,
-      sort_order: nextOrder,
-      is_primary: false,
-    })
-    .select("*")
-    .single();
-  if (error) return fail(error);
-
-  return ok(data as ProductImageRow);
+  // The next `sort_order` is assigned by `add_product_image`, which locks the
+  // product row first. It used to be computed here by reading the current
+  // maximum and adding one, which is a race: two uploads for one product both
+  // read the same maximum and both inserted the same value, and neither read
+  // failed so neither could detect it. The probe error was checked — that fix
+  // stands, and it is simply no longer load-bearing here.
+  return rpc.addProductImage(supabase, {
+    productId: input.productId,
+    storagePath: input.storagePath,
+    altText: input.altText,
+  });
 }
 
 export async function updateImageAlt(
@@ -599,15 +577,38 @@ export async function reorderProductImages(
  * The storage object is removed afterwards rather than inside the transaction: a
  * failure there leaves an orphaned file, which is recoverable, whereas the
  * reverse order would leave a row pointing at a file that no longer exists.
+ *
+ * The consequence is that the delete can HALF succeed, so the result reports
+ * both halves instead of pretending to be one. `orphanedPath` is non-null when
+ * the row is gone but the file is not: the delete itself did succeed and
+ * reporting it as a failure would send the admin looking for a row that is
+ * already deleted, so the caller is expected to warn rather than retry. The
+ * previous version discarded the storage result entirely, which turned that
+ * state into a silent leak with nothing in any log.
  */
-export async function deleteProductImage(imageId: string): Promise<Result<null>> {
+export type DeleteProductImageOutcome = { orphanedPath: string | null };
+
+export async function deleteProductImage(
+  imageId: string,
+): Promise<Result<DeleteProductImageOutcome>> {
   const supabase = await createClient();
 
   const deleted = await rpc.deleteProductImage(supabase, { imageId });
   if (!deleted.ok) return deleted;
 
-  if (deleted.data) {
-    await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([deleted.data]);
+  if (!deleted.data) return ok({ orphanedPath: null });
+
+  const { error: storageError } = await supabase.storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .remove([deleted.data]);
+
+  if (storageError) {
+    console.error(
+      `[catalog] image row ${imageId} was deleted but its storage object could not be removed`,
+      { storagePath: deleted.data, error: storageError },
+    );
+    return ok({ orphanedPath: deleted.data });
   }
-  return ok(null);
+
+  return ok({ orphanedPath: null });
 }

@@ -3,7 +3,7 @@
  * Runs every scenario in this directory and checks that each one behaved as its
  * name says it should.
  *
- * Six of the eight are SUPPOSED to fail. `--tap` exits non-zero on any failing
+ * Seven of the ten are SUPPOSED to fail. `--tap` exits non-zero on any failing
  * file, so running them directly would be useless — the whole point is that a
  * deliberately wrong assertion is caught. So each scenario runs as its own
  * `--tap` invocation, the exit code is compared against what the scenario
@@ -33,6 +33,11 @@ const EXPECTATIONS = {
   "t6-no-finish": "fail",
   "t7-null-vs-value": "fail",
   "t8-lives-fails": "fail",
+  // A NULL errmsg checks the SQLSTATE only, as in pgTAP. t9 pins that the null
+  // case PASSES and t10 pins that it still rejects a wrong SQLSTATE, so the
+  // relaxation cannot be reapplied as "skip the comparison".
+  "t9-null-errmsg-state-only": "pass",
+  "t10-null-errmsg-wrong-state": "fail",
 };
 
 const scenarios = readdirSync(HERE, { withFileTypes: true })

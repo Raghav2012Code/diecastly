@@ -81,9 +81,9 @@ Every read and write goes through exactly one of three lanes. Mixing lanes is th
 ## 8. Runtime and integration points
 
 - Supabase clients: `lib/supabase/client.ts` (browser, anon key) and `lib/supabase/server.ts` (server components/actions, session cookie). A service-role key is server-only and never shipped to the browser.
-- `lib/db/rpc.ts` — typed wrappers around every Postgres function; the only place RPC names/arguments are declared.
+- `lib/db/rpc.ts` — typed wrappers around the Postgres functions the application calls; the only place RPC names/arguments are declared. The migrations declare more functions than are wrapped: `is_admin`, `require_admin`, `next_order_number`, `apply_stock_delta`, `record_movement`, `normalize_phone` and the trigger helpers are internal, and policy functions like `is_listable_product_image` are called from SQL policies rather than from TypeScript. `tests/unit/rpc-signatures.test.ts` pins each wrapper's RPC name and `p_*` arguments against the migrations, so a renamed parameter fails `npm test` rather than failing at runtime — PostgREST does not type-check named arguments, and a mismatch is invisible to `tsc`.
 - `lib/validation/` — Zod schemas shared by forms and server code.
-- `lib/types/database.types.ts` — generated from the Supabase schema.
+- `lib/types/database.types.ts` — **hand-maintained**, not generated from the Supabase schema. It is deliberately partial: function signatures live in `lib/db/rpc.ts` rather than here, and a few view rows are declared locally at their consumer. Regenerating it from the live schema is a future task, not a current guarantee — treat a missing type as a prompt to check the SQL, not as evidence the type is unnecessary.
 - Images: Supabase Storage bucket `product-images` (public read, admin write), served via `next/image`.
 - Environment variables: Supabase URL + anon key (public), service-role key (server only), site URL.
 

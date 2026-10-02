@@ -1,7 +1,13 @@
 /**
- * Hand-maintained mirror of the Phase 1 schema (until `supabase gen types` can
- * run against a live local stack). Only the tables and views the app consumes
- * are declared here; the shapes follow `supabase/migrations` exactly.
+ * Hand-maintained mirror of the schema. Only the tables and views the app
+ * consumes are declared here; the shapes follow `supabase/migrations` exactly.
+ *
+ * Still partial by design, and deliberately not generated. Function signatures
+ * live in `lib/db/rpc.ts` instead of here, and `inventory_stock` is declared for
+ * reference while the app reads quantities through `v_product_stock`. When a
+ * column is added in a migration, update the matching type here in the same
+ * change — `docs/architecture.md` §8 records this as hand-maintained, so a
+ * missing type is a gap to fill rather than a deliberate omission.
  */
 
 export const PRODUCT_STATUSES = ["draft", "active", "archived"] as const;
@@ -459,4 +465,88 @@ export type OrderReceipt = {
   items: OrderItemRow[];
   payments: PaymentRow[];
   business: SettingsRow | null;
+};
+
+// ---------------------------------------------------------------------------
+// Phase 6 additions
+//
+// Column names, nullability and types below were read from the live schema
+// rather than inferred from the SQL, so they match what PostgREST returns. The
+// header of this file still describes the set as partial, and it is: function
+// signatures live in `lib/db/rpc.ts`, not here.
+// ---------------------------------------------------------------------------
+
+/** `payment_provider` enum — declared here for completeness; v1 writes `manual`. */
+export const PAYMENT_PROVIDERS = ["manual", "razorpay", "stripe"] as const;
+export type PaymentProvider = (typeof PAYMENT_PROVIDERS)[number];
+
+/** `admin_users` — an admin is `auth.users.id` mirrored with a display name. */
+export type AdminUserRow = {
+  id: string;
+  email: string;
+  display_name: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+/**
+ * `inventory_stock` — the current quantity per product.
+ *
+ * Declared for completeness only. The app reads quantities through
+ * `v_product_stock` and never reads this table directly: it is maintained by
+ * `apply_stock_delta`, so a direct read would bypass the same layer that
+ * enforces the stock invariants.
+ */
+export type InventoryStockRow = {
+  product_id: string;
+  quantity: number;
+  updated_at: string;
+};
+
+/** `v_low_stock` — products at or below their threshold, plus out-of-stock. */
+export type VLowStockRow = {
+  product_id: string | null;
+  name: string | null;
+  sku: string | null;
+  status: ProductStatus | null;
+  low_stock_threshold: number | null;
+  quantity: number | null;
+  is_out_of_stock: boolean | null;
+  is_low_stock: boolean | null;
+  purchase_cost: number | null;
+  selling_price: number | null;
+  category_id: string | null;
+  supplier_id: string | null;
+  updated_at: string | null;
+};
+
+/**
+ * `v_sales_daily` — one row per IST day per channel.
+ *
+ * `sale_date` is a `date` and comes back as `YYYY-MM-DD`. It is a date, not an
+ * instant: the view buckets on the IST day boundary, so rendering it through
+ * `lib/dates.ts` as a timestamp would re-apply a timezone shift that has already
+ * been applied.
+ */
+export type VSalesDailyRow = {
+  sale_date: string | null;
+  channel: OrderChannel | null;
+  orders_count: number | null;
+  item_revenue: number | null;
+  shipping_revenue: number | null;
+  revenue: number | null;
+  cogs: number | null;
+  gross_profit: number | null;
+  contribution_after_shipping: number | null;
+  units_sold: number | null;
+};
+
+/** `v_product_profit` — per-product units, revenue, COGS and gross profit. */
+export type VProductProfitRow = {
+  product_id: string | null;
+  product_name: string | null;
+  units_sold: number | null;
+  item_revenue: number | null;
+  cogs: number | null;
+  gross_profit: number | null;
 };

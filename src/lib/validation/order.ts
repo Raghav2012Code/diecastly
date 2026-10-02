@@ -111,6 +111,25 @@ export const refundPaymentSchema = z.object({
 });
 
 /**
+ * A non-financial admin note on an order.
+ *
+ * Notes are free text and carry no money or stock side effect; `update_order_notes`
+ * is the only writer. An empty field is stored as NULL rather than as an empty
+ * string, so "has a note" stays a single, direct test.
+ */
+export const orderNotesSchema = z.object({
+  orderId: z.string().uuid(),
+  notes: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z
+      .string()
+      .trim()
+      .max(2000, "Keep the note under 2,000 characters.")
+      .nullable(),
+  ),
+});
+
+/**
  * Online checkout line. Deliberately has **no** unit price: `place_online_order`
  * is `security definer` and granted to `anon`, so the catalog price is the only
  * price an anonymous caller may be given. Sending one is ignored by the server,
@@ -154,3 +173,4 @@ export type OnlineLineInput = z.infer<typeof onlineLineSchema>;
 export type OnlineOrderInput = z.infer<typeof onlineOrderInputSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 export type RefundPaymentInput = z.infer<typeof refundPaymentSchema>;
+export type OrderNotesInput = z.infer<typeof orderNotesSchema>;

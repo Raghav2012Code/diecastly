@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { fromFriendly, fromZod, type ActionResult } from "@/lib/action-result";
-import { recordPayment, refundPayment } from "@/lib/db/rpc";
-import { recordPaymentSchema, refundPaymentSchema } from "@/lib/validation/order";
+import { recordPayment, refundPayment, updateOrderNotes } from "@/lib/db/rpc";
+import { orderNotesSchema, recordPaymentSchema, refundPaymentSchema } from "@/lib/validation/order";
 import { updateOrderStatus, cancelOrder, restockCancelledOrder } from "@/lib/db/rpc";
 import { actionError } from "@/lib/action-result";
 import {
@@ -79,6 +79,27 @@ export async function refundPaymentAction(input: unknown): Promise<ActionResult<
 
   revalidateOrder(parsed.data.orderId);
   return { ok: true, data: toState(result.data.financials) };
+}
+
+/**
+ * Non-financial order note. The only write to an order that is not a status or
+ * payment change, and the only one that touches no ledger: no money, no stock,
+ * no history row. Still routed through the `update_order_notes` RPC so orders
+ * remain writable solely through `lib/db/rpc.ts` (rule 1).
+ */
+export async function updateOrderNotesAction(input: unknown): Promise<ActionResult<null>> {
+  const parsed = orderNotesSchema.safeParse(input);
+  if (!parsed.success) return fromZod(parsed.error);
+
+  const supabase = await createClient();
+  const result = await updateOrderNotes(supabase, {
+    orderId: parsed.data.orderId,
+    notes: parsed.data.notes,
+  });
+  if (!result.ok) return fromFriendly(result.error);
+
+  revalidateOrder(parsed.data.orderId);
+  return { ok: true, data: null };
 }
 
 // ---------------------------------------------------------------------------

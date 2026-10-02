@@ -141,6 +141,14 @@ $$;
 -- message check is not redundant: D49 pins every business failure to P0001 and
 -- distinguishes them by message text, so matching the state alone would let an
 -- assertion pass on the wrong failure.
+--
+-- A NULL `want_message` means "check the SQLSTATE only", which is what pgTAP
+-- does and is the reason this is spelled out rather than left to
+-- `position()`: `position(NULL in v_msg)` is NULL, not 0, so a plain
+-- `and position(...) > 0` makes the whole conjunction NULL — never true — and a
+-- legitimate state-only assertion fails here while passing under real pgTAP.
+-- A shim that disagrees with the real gate in EITHER direction makes the gate
+-- lie, and this one lied by reporting a false failure.
 create or replace function public.throws_ok(
   sql text, want_state text, want_message text, description text
 )
@@ -156,14 +164,17 @@ begin
   exception when others then
     get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
     return public._pgtap_tally(
-      v_state = want_state and position(want_message in v_msg) > 0,
+      v_state = want_state
+        and (want_message is null or position(want_message in v_msg) > 0),
       description
         || ' (got ' || coalesce(v_state, 'no error') || ': ' || coalesce(v_msg, '') || ')'
     );
   end;
   return public._pgtap_tally(
     false,
-    description || ' (no error raised; expected ' || want_state || ' ' || want_message || ')'
+    description
+      || ' (no error raised; expected ' || want_state || ' '
+      || coalesce(want_message, '<any message>') || ')'
   );
 end;
 $$;

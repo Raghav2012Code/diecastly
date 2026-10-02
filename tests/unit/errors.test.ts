@@ -33,6 +33,7 @@ const RAISED_CODES = [
   "invalid_reason",
   "invalid_transition",
   "invalid_unit_price",
+  "no_access_token",
   "not_authorized",
   "nothing_to_refund",
   "order_not_found",

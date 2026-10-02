@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { listCustomers } from "@/lib/customers/data";
+import { CustomerFormDialog } from "./customer-form-dialog";
 import { one, pageNumber } from "@/lib/list-params";
 import { lastPage, resolveListState } from "@/lib/list-state";
 import { formatDateTimeIST } from "@/lib/dates";
@@ -18,10 +19,14 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 /**
  * The customer list.
  *
- * Read-only in this phase. The storefront links to a customer record but never
- * modifies one (D51), so there is deliberately no edit form here yet — the
- * admin metadata lane permits it, but building it was not part of Phase 5, and a
- * half-built editor is worse than none.
+ * Customers are the admin metadata lane: `customers_admin_all` permits direct
+ * writes, exactly as it does for products and suppliers, so create is offered
+ * here and edit on the detail page. The storefront still only ever LINKS to a
+ * customer record (D51) — nothing in the anonymous path modifies one.
+ *
+ * Archived customers are hidden unless `includeArchived` is set, mirroring the
+ * supplier list, and are additionally withheld from the till's picker so a
+ * retired record cannot be silently resurrected by a new sale.
  *
  * `total_spent` comes from `v_customer_summary`, which excludes cancelled and
  * returned orders. That exclusion is the whole reason the view exists rather
@@ -31,8 +36,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
   const params = await searchParams;
   const search = one(params.search)?.trim().slice(0, 120) || undefined;
   const page = pageNumber(params.page);
+  const includeArchived = one(params.archived) === "1";
 
-  const list = await listCustomers({ search, page });
+  const list = await listCustomers({ search, page, includeArchived });
   const hasFilters = Boolean(search);
 
   if (!list.ok) {
@@ -59,6 +65,12 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
           total === 0
             ? "No customers yet."
             : `${total} customer${total === 1 ? "" : "s"}, most recently active first.`
+        }
+        actions={
+          <CustomerFormDialog
+            mode="create"
+            key={includeArchived ? "archived" : "active"}
+          />
         }
       />
 
@@ -87,6 +99,18 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
           </Link>
         ) : null}
       </form>
+
+      {includeArchived ? (
+        <p className="text-sm text-muted-foreground">
+          Showing archived customers too.{" "}
+          <Link
+            href={search ? `/admin/customers?search=${encodeURIComponent(search)}` : "/admin/customers"}
+            className="underline underline-offset-4"
+          >
+            Hide archived
+          </Link>
+        </p>
+      ) : null}
 
       {state === "out-of-range" ? (
         <EmptyState
@@ -130,12 +154,22 @@ export default async function CustomersPage({ searchParams }: { searchParams: Se
               {rows.map((row) => (
                 <TableRow key={row.customer_id}>
                   <TableCell className="font-medium">
-                    {row.name || "(no name)"}
+                    <Link
+                      href={`/admin/customers/${row.customer_id}`}
+                      className="underline underline-offset-4"
+                    >
+                      {row.name || "(no name)"}
+                    </Link>
                     {row.orders_count === 0 ? (
                       <Badge tone="outline" className="ml-2">
                         no orders
                       </Badge>
                     ) : null}
+                    {row.is_active ? null : (
+                      <Badge tone="outline" className="ml-2">
+                        archived
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{row.phone_normalized}</TableCell>
                   <TableCell className="text-muted-foreground">{row.email ?? "—"}</TableCell>

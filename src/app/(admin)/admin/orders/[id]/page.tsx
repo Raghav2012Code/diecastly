@@ -6,6 +6,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { OrderDetailView } from "@/components/admin/order-detail-view";
 import { getOrderDetail } from "@/lib/orders/data";
 import { PaymentDialogs } from "./payment-dialogs";
+import { OrderNotesDialog } from "./order-notes-dialog";
+import { RotateTokenButton } from "./rotate-token-button";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Order" };
@@ -50,6 +52,12 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             balance={financials.balance}
             netPaid={financials.net_paid}
             defaultMethod={order.payment_method ?? "cash"}
+          />
+          <OrderNotesDialog orderId={id} orderNumber={order.order_number} notes={order.notes} />
+          <RotateTokenButton
+            orderId={id}
+            orderNumber={order.order_number}
+            channel={order.channel}
           />
         </>
       }
