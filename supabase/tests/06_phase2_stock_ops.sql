@@ -43,8 +43,12 @@ select is(
   'restock increments stock'
 );
 
+-- Scoped to this file's products. A global count reads 1 only on an empty
+-- database; once anything has ever been restocked it counts the whole ledger.
 select is(
-  (select count(*)::integer from public.inventory_movements where movement_type = 'restock'),
+  (select count(*)::integer from public.inventory_movements
+    where movement_type = 'restock'
+      and product_id = '10000000-0000-0000-0000-000000000001'),
   1,
   'a restock writes exactly one restock movement'
 );
@@ -65,7 +69,9 @@ select is(
 );
 
 select is(
-  (select count(*)::integer from public.inventory_movements where movement_type = 'adjustment'),
+  (select count(*)::integer from public.inventory_movements
+    where movement_type = 'adjustment'
+      and product_id = '10000000-0000-0000-0000-000000000001'),
   1,
   'an adjustment writes exactly one adjustment movement'
 );
@@ -174,8 +180,13 @@ select is(
   'a healthy product is stocked well above its threshold'
 );
 
+-- Restricted to the products THIS file created. The view is a report over the
+-- whole catalogue, so an unfiltered count is 2 only while nothing else in the
+-- database is low - it breaks the moment the catalogue has any trading history.
 select is(
-  (select count(*)::integer from public.v_low_stock),
+  (select count(*)::integer from public.v_low_stock
+    where product_id in ('10000000-0000-0000-0000-000000000003',
+                         '10000000-0000-0000-0000-000000000006')),
   2,
   'v_low_stock returns exactly the expected rows'
 );

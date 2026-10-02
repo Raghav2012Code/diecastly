@@ -51,8 +51,15 @@ select lives_ok(
   'a sale within available stock succeeds'
 );
 
+-- Scoped to this file's product, not counted across the table. A global count
+-- is 1 only on an empty database: with any trading history already present it
+-- reports every sale in the ledger and fails. That is not a hypothetical - this
+-- assertion passed for the whole life of the suite only because nothing had ever
+-- sold anything, and broke the moment the database was seeded.
 select is(
-  (select count(*)::integer from public.inventory_movements where movement_type = 'sale'),
+  (select count(*)::integer from public.inventory_movements
+    where movement_type = 'sale'
+      and product_id = '10000000-0000-0000-0000-000000000001'),
   1,
   'exactly one sale movement is written per sale'
 );
@@ -75,7 +82,8 @@ select is(
 
 select is(
   (select count(*)::integer from public.inventory_movements
-    where movement_type = 'order_cancel'),
+    where movement_type = 'order_cancel'
+      and product_id = '10000000-0000-0000-0000-000000000001'),
   1,
   'cancellation restocks exactly once'
 );

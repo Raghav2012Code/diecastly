@@ -64,6 +64,14 @@ delete from public.suppliers;
 -- not exist in this database.
 select setval('public.order_number_seq', 1, false);
 
+-- Shipping is left at 0, which is the column default
+-- (default_shipping_fee numeric(12,2) not null default 0) and what the pgTAP
+-- suite assumes: 04_payments and 08_money_trust_boundary assert an online
+-- order's `total` equals its line sum, so a non-zero fee makes those fail by
+-- exactly the fee. Setting a realistic 79.00 here is what broke three
+-- assertions in those two files. A business that charges shipping configures it
+-- in the admin, not in a seed, and doing it here would have quietly overridden a
+-- documented default.
 update public.settings
    set business_name = 'Diecastly',
        business_phone = '+91 80 4718 2200',
@@ -71,7 +79,7 @@ update public.settings
        upi_id = 'diecastly@okhdfcbank',
        currency = 'INR',
        cod_enabled = true,
-       default_shipping_fee = 79.00,
+       default_shipping_fee = 0.00,
        low_stock_threshold_default = 2,
        order_prefix = 'DC'
  where id = true;

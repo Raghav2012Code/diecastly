@@ -26,8 +26,11 @@
     "test:db:orders": "node scripts/single-user.mjs --assertions=scripts/order-assertions.sql",
     "test:db:tap": "node scripts/single-user.mjs --tap=supabase/tests",
     "test:db:shim": "node scripts/pgtap-shim-selftest/run.mjs",
+    "test:db:race": "node scripts/payment-race-check.mjs",
+    "test:db:remote": "node scripts/pgtap-remote.mjs",
     "test:db:fallback": "npm run test:db:shim && npm run test:db:single && npm run test:db:catalog && npm run test:db:orders && npm run test:db:tap",
-    "verify:fallback": "npm run typecheck && npm run lint && npm test && npm run build && npm run contrast && npm run test:db:fallback"
+    "verify:fallback": "npm run typecheck && npm run lint && npm test && npm run build && npm run contrast && npm run test:db:fallback",
+    "verify:sql": "npm run test:db:fallback && npm run test:db:remote && npm run test:db:race"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
