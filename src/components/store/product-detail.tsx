@@ -109,7 +109,7 @@ export function ProductDetail({
                 onClick={() => setActive(index)}
                 aria-current={index === active}
                 aria-label={`Show image ${index + 1} of ${gallery.length}`}
-                className={`h-16 w-16 shrink-0 overflow-hidden rounded-md border-2 bg-secondary ${
+                className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-md border-2 bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   index === active ? "border-foreground" : "border-transparent"
                 }`}
               >
