@@ -54,6 +54,7 @@ export function Pagination({
         <Link
           href={hrefFor(basePath, params, Math.max(1, clampedPage - 1))}
           aria-disabled={clampedPage <= 1}
+          tabIndex={clampedPage <= 1 ? -1 : undefined}
           className={cn(linkClass, clampedPage <= 1 && disabledClass)}
         >
           Previous
@@ -82,6 +83,7 @@ export function Pagination({
         <Link
           href={hrefFor(basePath, params, Math.min(pageCount, clampedPage + 1))}
           aria-disabled={clampedPage >= pageCount}
+          tabIndex={clampedPage >= pageCount ? -1 : undefined}
           className={cn(linkClass, clampedPage >= pageCount && disabledClass)}
         >
           Next
