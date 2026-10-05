@@ -182,6 +182,11 @@ export function CartView({ shippingFee }: { shippingFee: number }) {
                         variant="ghost"
                         size="icon"
                         aria-label={`Decrease quantity of ${line.name}`}
+                        title={
+                          line.quantity <= 1
+                            ? `Remove ${line.name}`
+                            : `Decrease quantity of ${line.name}`
+                        }
                         onClick={() => cart.setQuantity(line.productId, line.quantity - 1)}
                       >
                         −
@@ -193,7 +198,16 @@ export function CartView({ shippingFee }: { shippingFee: number }) {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        aria-label={`Increase quantity of ${line.name}`}
+                        aria-label={
+                          line.quantity >= cap
+                            ? `Increase quantity of ${line.name} (maximum ${cap} reached)`
+                            : `Increase quantity of ${line.name}`
+                        }
+                        title={
+                          line.quantity >= cap
+                            ? `Maximum available stock (${cap}) reached`
+                            : `Increase quantity of ${line.name}`
+                        }
                         disabled={line.quantity >= cap}
                         onClick={() => cart.setQuantity(line.productId, line.quantity + 1)}
                       >

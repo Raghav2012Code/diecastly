@@ -162,6 +162,7 @@ export function ProductDetail({
                     variant="ghost"
                     size="icon"
                     aria-label="Decrease quantity"
+                    title={quantity <= 1 ? "Minimum quantity is 1" : "Decrease quantity"}
                     disabled={quantity <= 1}
                     onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                   >
@@ -174,7 +175,16 @@ export function ProductDetail({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label="Increase quantity"
+                    aria-label={
+                      quantity >= cap
+                        ? `Increase quantity (maximum ${cap} available reached)`
+                        : "Increase quantity"
+                    }
+                    title={
+                      quantity >= cap
+                        ? `Maximum available quantity (${cap}) reached`
+                        : "Increase quantity"
+                    }
                     disabled={quantity >= cap}
                     onClick={() => setQuantity((q) => Math.min(cap, q + 1))}
                   >
