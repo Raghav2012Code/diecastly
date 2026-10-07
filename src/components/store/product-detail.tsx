@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import * as React from "react";
+import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/store/cart-context";
 import { useToast } from "@/components/ui/toast";
@@ -46,6 +47,7 @@ export function ProductDetail({
   const { toast } = useToast();
   const [quantity, setQuantity] = React.useState(1);
   const [active, setActive] = React.useState(0);
+  const quantityLabelId = useId();
 
   const cap = quantityCap(product.quantity);
   const soldOut = cap === 0;
@@ -101,7 +103,7 @@ export function ProductDetail({
         </div>
 
         {gallery.length > 1 ? (
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="region" aria-label="Product thumbnails">
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="region" aria-label="Product thumbnails" tabIndex={0}>
             {gallery.map((image, index) => (
               <button
                 key={image.id}
@@ -154,8 +156,8 @@ export function ProductDetail({
             </p>
           ) : (
             <>
-              <div className="flex items-center gap-3" role="group" aria-labelledby="quantity-label">
-                <span id="quantity-label" className="text-sm font-medium">
+              <div className="flex items-center gap-3" role="group" aria-labelledby={quantityLabelId}>
+                <span id={quantityLabelId} className="text-sm font-medium">
                   Quantity
                 </span>
                 <div className="flex items-center rounded-md border border-border">
