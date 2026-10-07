@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import * as React from "react";
+import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/store/cart-context";
 import { useToast } from "@/components/ui/toast";
@@ -46,6 +47,7 @@ export function ProductDetail({
   const { toast } = useToast();
   const [quantity, setQuantity] = React.useState(1);
   const [active, setActive] = React.useState(0);
+  const quantityLabelId = useId();
 
   const cap = quantityCap(product.quantity);
   const soldOut = cap === 0;
@@ -101,14 +103,14 @@ export function ProductDetail({
         </div>
 
         {gallery.length > 1 ? (
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="region" aria-label="Product thumbnails" tabIndex={0}>
             {gallery.map((image, index) => (
               <button
                 key={image.id}
                 type="button"
                 onClick={() => setActive(index)}
-                aria-current={index === active}
-                aria-label={`Show image ${index + 1} of ${gallery.length}`}
+                aria-current={index === active ? "true" : undefined}
+                aria-label={`Show image ${index + 1} of ${gallery.length}${image.alt_text ? `: ${image.alt_text}` : ""}`}
                 className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-md border-2 bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   index === active ? "border-foreground" : "border-transparent"
                 }`}
@@ -154,8 +156,10 @@ export function ProductDetail({
             </p>
           ) : (
             <>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium">Quantity</span>
+              <div className="flex items-center gap-3" role="group" aria-labelledby={quantityLabelId}>
+                <span id={quantityLabelId} className="text-sm font-medium">
+                  Quantity
+                </span>
                 <div className="flex items-center rounded-md border border-border">
                   <Button
                     type="button"
@@ -167,7 +171,10 @@ export function ProductDetail({
                   >
                     −
                   </Button>
-                  <span className="min-w-10 text-center text-sm tabular-nums" aria-live="polite">
+                  <span
+                    className="min-w-10 text-center text-sm tabular-nums"
+                    aria-live="polite"
+                  >
                     {quantity}
                   </span>
                   <Button
